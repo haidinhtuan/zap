@@ -1,17 +1,18 @@
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
 use crate::app::{App, ConnectionStatus, Mode};
 
-/// Render the top status bar showing the app name, current mode, and connection status.
+/// Render the top status bar with nvim-style colored mode badge.
 pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
-    let mode_str = match &app.mode {
-        Mode::Normal => "NORMAL",
-        Mode::Insert => "INSERT",
-        Mode::Command(_) => "COMMAND",
+    let (mode_str, mode_bg) = match &app.mode {
+        Mode::Normal => (" NORMAL ", Color::Blue),
+        Mode::Insert => (" INSERT ", Color::Green),
+        Mode::MessageSelect => (" SELECT ", Color::Yellow),
+        Mode::Command(_) => (" COMMAND ", Color::Magenta),
     };
 
     let (conn_symbol, conn_text, conn_color) = match &app.connection_status {
@@ -20,16 +21,22 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         ConnectionStatus::Disconnected => ("\u{25c7}", "Disconnected", Color::Red),
     };
 
-    let left = Span::styled(
-        "\u{26a1} Zap",
+    // Nvim-style: colored block for mode, then app name.
+    let mode_badge = Span::styled(
+        mode_str,
+        Style::default().fg(Color::Black).bg(mode_bg).add_modifier(Modifier::BOLD),
+    );
+
+    let app_name = Span::styled(
+        " \u{26a1} Zap ",
         Style::default().fg(Color::Cyan),
     );
 
-    let right_text = format!(" {} {} {} ", mode_str, conn_symbol, conn_text);
+    let right_text = format!(" {} {} ", conn_symbol, conn_text);
     let right = Span::styled(right_text, Style::default().fg(conn_color));
 
-    // Calculate padding to right-align the status info.
-    let left_len = 5; // "⚡ Zap" display width (emoji + space + 3 chars)
+    // Calculate padding.
+    let left_len = mode_str.len() + 6; // mode badge + " ⚡ Zap "
     let right_len = right.content.len();
     let padding = if area.width as usize > left_len + right_len {
         area.width as usize - left_len - right_len
@@ -38,12 +45,13 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
     };
 
     let line = Line::from(vec![
-        left,
+        mode_badge,
+        app_name,
         Span::raw(" ".repeat(padding)),
         right,
     ]);
 
-    let bar = Paragraph::new(line).style(Style::default().bg(Color::DarkGray));
+    let bar = Paragraph::new(line).style(Style::default().bg(Color::Rgb(24, 24, 37)));
 
     frame.render_widget(bar, area);
 }

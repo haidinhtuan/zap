@@ -4,13 +4,19 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
 use ratatui::Frame;
 
-use crate::app::App;
+use crate::app::{App, Mode};
 
 /// Render the room list panel with selection highlight and unread badges.
 pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
+    let border_color = if app.mode == Mode::Normal {
+        Color::Blue
+    } else {
+        Color::DarkGray
+    };
+
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::DarkGray))
+        .border_style(Style::default().fg(border_color))
         .title(" Rooms ");
 
     if app.rooms.is_empty() {
@@ -25,20 +31,23 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         .rooms
         .iter()
         .map(|room| {
-            let mut spans = vec![Span::raw(" ")];
+            let mut spans = Vec::new();
 
             if room.unread_count > 0 {
                 spans.push(Span::styled(
-                    &room.name,
-                    Style::default().add_modifier(Modifier::BOLD),
+                    "\u{25cf} ",
+                    Style::default().fg(Color::Red),
                 ));
-                spans.push(Span::raw("  "));
                 spans.push(Span::styled(
-                    format!("{}", room.unread_count),
-                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                    &room.name,
+                    Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
                 ));
             } else {
-                spans.push(Span::raw(&room.name));
+                spans.push(Span::raw("  "));
+                spans.push(Span::styled(
+                    &room.name,
+                    Style::default().fg(Color::Gray),
+                ));
             }
 
             ListItem::new(Line::from(spans))
@@ -152,8 +161,8 @@ mod tests {
         app.rooms = make_rooms();
         let buf = render_room_list(&app, 22, 10);
         let content = buffer_content(&buf);
-        // "Random" has unread_count=3, so should show the badge
-        assert!(content.contains("3"), "Should show unread badge '3' for Random, got:\n{}", content);
+        // "Random" has unread_count=3, so should show the unread dot indicator
+        assert!(content.contains("●"), "Should show unread dot '●' for Random, got:\n{}", content);
     }
 
     #[test]
