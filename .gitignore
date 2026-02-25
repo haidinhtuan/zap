@@ -1,7 +1,7 @@
 /target
-Cargo.lock
 *.swp
 *.swo
 *~
 .env
 /docs/
+/docker/mautrix-meta/

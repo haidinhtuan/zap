@@ -1,3 +1,6 @@
+use matrix_sdk::ruma::events::room::message::{
+    MessageType, OriginalSyncRoomMessageEvent, SyncRoomMessageEvent,
+};
 use matrix_sdk::Client;
 use tokio::sync::mpsc;
 
@@ -22,16 +25,110 @@ pub enum MatrixEvent {
 pub fn start_sync(client: Client) -> mpsc::UnboundedReceiver<MatrixEvent> {
     let (tx, rx) = mpsc::unbounded_channel();
 
+    // Register handler for incoming messages.
+    let msg_tx = tx.clone();
+    let own_user_id = client.user_id().map(|id| id.to_owned());
+    client.add_event_handler(
+        move |event: SyncRoomMessageEvent, room: matrix_sdk::Room| {
+            let tx = msg_tx.clone();
+            let own_uid = own_user_id.clone();
+            async move {
+                if let SyncRoomMessageEvent::Original(OriginalSyncRoomMessageEvent {
+                    content,
+                    sender,
+                    origin_server_ts,
+                    event_id,
+                    ..
+                }) = event
+                {
+                    let body = match content.msgtype {
+                        MessageType::Text(text) => text.body,
+                        MessageType::Notice(notice) => notice.body,
+                        MessageType::Emote(emote) => format!("* {}", emote.body),
+                        _ => return,
+                    };
+
+                    let millis: i64 =
+                        i64::from(origin_server_ts.as_secs()) * 1000;
+                    let timestamp =
+                        chrono::DateTime::from_timestamp_millis(millis)
+                            .unwrap_or_else(chrono::Utc::now);
+
+                    // Resolve display name from room membership.
+                    let display_name = room
+                        .get_member_no_sync(&sender)
+                        .await
+                        .ok()
+                        .flatten()
+                        .and_then(|m| m.display_name().map(|n| n.to_string()))
+                        .unwrap_or_else(|| sender.localpart().to_string());
+
+                    // Check for reply.
+                    let reply_to = content
+                        .relates_to
+                        .as_ref()
+                        .and_then(|r| {
+                            if let matrix_sdk::ruma::events::room::message::Relation::Reply { in_reply_to } = r {
+                                Some(in_reply_to.event_id.to_string())
+                            } else {
+                                None
+                            }
+                        });
+
+                    // Strip the fallback reply prefix from body if present.
+                    let clean_body = if body.starts_with("> ") {
+                        body.lines()
+                            .skip_while(|l| l.starts_with("> ") || l.is_empty())
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    } else {
+                        body
+                    };
+
+                    let is_own = own_uid.as_ref() == Some(&sender);
+
+                    let _ = tx.send(MatrixEvent::NewMessage {
+                        room_id: room.room_id().to_string(),
+                        message: Message {
+                            event_id: Some(event_id.to_string()),
+                            sender: display_name,
+                            body: clean_body,
+                            timestamp,
+                            is_own,
+                            reply_to,
+                        },
+                    });
+                }
+            }
+        },
+    );
+
     tokio::spawn(async move {
+        // Auto-join any invited rooms before first sync.
+        auto_join_invites(&client).await;
+
         // Send the initial room list.
         let rooms = get_room_list(&client).await;
         let _ = tx.send(MatrixEvent::RoomListUpdate(rooms));
 
         // Continuous sync loop.
         let settings = matrix_sdk::config::SyncSettings::default();
+        let mut sync_token: Option<String> = None;
+
         loop {
-            match client.sync_once(settings.clone()).await {
-                Ok(_response) => {
+            let s = if let Some(ref token) = sync_token {
+                settings.clone().token(token.clone())
+            } else {
+                settings.clone()
+            };
+
+            match client.sync_once(s).await {
+                Ok(response) => {
+                    sync_token = Some(response.next_batch);
+
+                    // Auto-join any new invites.
+                    auto_join_invites(&client).await;
+
                     let rooms = get_room_list(&client).await;
                     let _ = tx.send(MatrixEvent::RoomListUpdate(rooms));
                 }
@@ -46,7 +143,19 @@ pub fn start_sync(client: Client) -> mpsc::UnboundedReceiver<MatrixEvent> {
     rx
 }
 
-/// Build a list of Room structs from the client's joined rooms.
+/// Auto-join all rooms the user has been invited to.
+async fn auto_join_invites(client: &Client) {
+    for room in client.invited_rooms() {
+        let room_id = room.room_id().to_owned();
+        tracing::info!("Auto-joining invited room: {}", room_id);
+        if let Err(e) = room.join().await {
+            tracing::warn!("Failed to join room {}: {}", room_id, e);
+        }
+    }
+}
+
+/// Build a list of Room structs from the client's joined rooms, sorted by
+/// most recent activity (newest first).
 async fn get_room_list(client: &Client) -> Vec<Room> {
     let mut rooms = Vec::new();
     for room in client.joined_rooms() {
@@ -61,13 +170,32 @@ async fn get_room_list(client: &Client) -> Vec<Room> {
             .try_into()
             .unwrap_or(0u32);
 
+        // Get the timestamp of the latest message in this room by fetching 1 message.
+        let last_activity = {
+            let mut opts = matrix_sdk::room::MessagesOptions::backward();
+            opts.limit = 1u32.into();
+            room.messages(opts).await.ok().and_then(|resp| {
+                resp.chunk.first().and_then(|ev| {
+                    ev.raw().deserialize().ok().map(|e: matrix_sdk::ruma::events::AnySyncTimelineEvent| {
+                        let secs = i64::from(e.origin_server_ts().as_secs());
+                        chrono::DateTime::from_timestamp(secs, 0)
+                            .unwrap_or_else(chrono::Utc::now)
+                    })
+                })
+            })
+        };
+
         rooms.push(Room {
             id: room.room_id().to_string(),
             name,
             unread_count,
-            last_activity: None,
+            last_activity,
         });
     }
+
+    // Sort by last_activity descending (most recent first).
+    rooms.sort_by(|a, b| b.last_activity.cmp(&a.last_activity));
+
     rooms
 }
 
@@ -82,10 +210,12 @@ mod tests {
         let _msg = MatrixEvent::NewMessage {
             room_id: "!test:example.com".to_string(),
             message: Message {
+                event_id: None,
                 sender: "@alice:example.com".to_string(),
                 body: "hello".to_string(),
                 timestamp: chrono::Utc::now(),
                 is_own: false,
+                reply_to: None,
             },
         };
         let _err = MatrixEvent::SyncError("timeout".to_string());

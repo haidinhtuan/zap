@@ -61,6 +61,8 @@ pub struct ThemeColors {
 pub struct KeymapConfig {
     pub normal: HashMap<String, String>,
     pub insert: HashMap<String, String>,
+    #[serde(default)]
+    pub message_select: HashMap<String, String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -138,11 +140,13 @@ impl Default for KeymapConfig {
         normal.insert("q".to_string(), "quit".to_string());
         normal.insert("j".to_string(), "room_next".to_string());
         normal.insert("k".to_string(), "room_prev".to_string());
+        normal.insert("Up".to_string(), "room_prev".to_string());
+        normal.insert("Down".to_string(), "room_next".to_string());
         normal.insert("i".to_string(), "insert_mode".to_string());
         normal.insert(":".to_string(), "command_mode".to_string());
         normal.insert("G".to_string(), "room_last".to_string());
         normal.insert("/".to_string(), "room_filter".to_string());
-        normal.insert("Enter".to_string(), "open_room".to_string());
+        normal.insert("Enter".to_string(), "enter_message_select".to_string());
         normal.insert("r".to_string(), "mark_read".to_string());
         normal.insert("R".to_string(), "mark_all_read".to_string());
         normal.insert("Ctrl+u".to_string(), "scroll_up".to_string());
@@ -152,7 +156,18 @@ impl Default for KeymapConfig {
         insert.insert("Esc".to_string(), "normal_mode".to_string());
         insert.insert("Enter".to_string(), "send_message".to_string());
 
-        Self { normal, insert }
+        let mut message_select = HashMap::new();
+        message_select.insert("j".to_string(), "message_next".to_string());
+        message_select.insert("k".to_string(), "message_prev".to_string());
+        message_select.insert("Up".to_string(), "message_prev".to_string());
+        message_select.insert("Down".to_string(), "message_next".to_string());
+        message_select.insert("r".to_string(), "reply_to".to_string());
+        message_select.insert("d".to_string(), "delete_message".to_string());
+        message_select.insert("i".to_string(), "mode_insert".to_string());
+        message_select.insert("q".to_string(), "quit".to_string());
+        message_select.insert("Esc".to_string(), "mode_normal".to_string());
+
+        Self { normal, insert, message_select }
     }
 }
 

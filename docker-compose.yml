@@ -1,0 +1,43 @@
+services:
+  # Tuwunel - lightweight Matrix homeserver (successor to Conduit)
+  # https://github.com/matrix-construct/tuwunel
+  homeserver:
+    image: jevolk/tuwunel:latest
+    container_name: zap-homeserver
+    restart: unless-stopped
+    ports:
+      - "6167:6167"
+    volumes:
+      - homeserver_data:/var/lib/tuwunel
+    environment:
+      TUWUNEL_SERVER_NAME: localhost
+      TUWUNEL_DATABASE_PATH: /var/lib/tuwunel
+      TUWUNEL_PORT: 6167
+      TUWUNEL_ADDRESS: 0.0.0.0
+      TUWUNEL_MAX_REQUEST_SIZE: 20000000
+      TUWUNEL_ALLOW_REGISTRATION: "true"
+      TUWUNEL_REGISTRATION_TOKEN: "${REGISTRATION_TOKEN:-zap-setup-token}"
+      TUWUNEL_ALLOW_FEDERATION: "false"
+      TUWUNEL_TRUSTED_SERVERS: '["matrix.org"]'
+    networks:
+      - zap-network
+
+  # mautrix-meta - bridges Matrix to Meta Messenger / Facebook / Instagram
+  # https://docs.mau.fi/bridges/go/meta/
+  meta-bridge:
+    image: dock.mau.dev/mautrix/meta:latest
+    container_name: zap-meta-bridge
+    restart: unless-stopped
+    depends_on:
+      - homeserver
+    volumes:
+      - ./docker/mautrix-meta:/data
+    networks:
+      - zap-network
+
+volumes:
+  homeserver_data:
+
+networks:
+  zap-network:
+    driver: bridge

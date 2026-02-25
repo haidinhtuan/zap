@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+use crate::config::ThemeConfig;
+
 /// Represents a Matrix room in the room list.
 #[derive(Debug, Clone)]
 pub struct Room {
@@ -12,10 +14,21 @@ pub struct Room {
 /// Represents a single chat message.
 #[derive(Debug, Clone)]
 pub struct Message {
+    pub event_id: Option<String>,
     pub sender: String,
     pub body: String,
     pub timestamp: chrono::DateTime<chrono::Utc>,
     pub is_own: bool,
+    /// If this is a reply, the event_id of the message being replied to.
+    pub reply_to: Option<String>,
+}
+
+/// Context for an in-progress reply.
+#[derive(Debug, Clone)]
+pub struct ReplyContext {
+    pub event_id: String,
+    pub sender: String,
+    pub body: String,
 }
 
 /// The current input mode of the application.
@@ -23,6 +36,7 @@ pub struct Message {
 pub enum Mode {
     Normal,
     Insert,
+    MessageSelect,
     Command(String),
 }
 
@@ -41,6 +55,14 @@ pub enum Action {
     ModeNormal,
     ModeInsert,
     ModeCommand,
+    EnterMessageSelect,
+    MessageNext,
+    MessagePrev,
+    ReplyTo,
+    CancelReply,
+    DeleteMessage,
+    ConfirmDelete,
+    CancelDelete,
     RoomNext,
     RoomPrev,
     RoomFirst,
@@ -65,6 +87,13 @@ pub struct App {
     pub scroll_offset: usize,
     pub should_quit: bool,
     pub connection_status: ConnectionStatus,
+    pub theme: Option<ThemeConfig>,
+    pub selected_message: Option<usize>,
+    pub reply_context: Option<ReplyContext>,
+    /// When true, the UI shows a delete confirmation prompt.
+    pub confirm_delete: bool,
+    /// The logged-in user's Matrix ID (e.g. "@haidinhtuan:localhost").
+    pub own_user_id: Option<String>,
 }
 
 impl App {
@@ -79,6 +108,11 @@ impl App {
             scroll_offset: 0,
             should_quit: false,
             connection_status: ConnectionStatus::Disconnected,
+            theme: None,
+            selected_message: None,
+            reply_context: None,
+            confirm_delete: false,
+            own_user_id: None,
         }
     }
 
@@ -90,6 +124,7 @@ impl App {
             }
             Action::ModeNormal => {
                 self.mode = Mode::Normal;
+                self.selected_message = None;
             }
             Action::ModeInsert => {
                 if self.mode == Mode::Normal {
@@ -145,6 +180,72 @@ impl App {
                 for room in &mut self.rooms {
                     room.unread_count = 0;
                 }
+            }
+            Action::EnterMessageSelect => {
+                if self.mode == Mode::Normal {
+                    if let Some(room) = self.rooms.get(self.selected_room) {
+                        if let Some(msgs) = self.messages.get(&room.id) {
+                            if !msgs.is_empty() {
+                                self.mode = Mode::MessageSelect;
+                                self.selected_message = Some(msgs.len() - 1);
+                            }
+                        }
+                    }
+                }
+            }
+            Action::MessageNext => {
+                if self.mode == Mode::MessageSelect {
+                    if let Some(idx) = self.selected_message {
+                        if let Some(room) = self.rooms.get(self.selected_room) {
+                            if let Some(msgs) = self.messages.get(&room.id) {
+                                self.selected_message = Some((idx + 1).min(msgs.len() - 1));
+                            }
+                        }
+                    }
+                }
+            }
+            Action::MessagePrev => {
+                if self.mode == Mode::MessageSelect {
+                    if let Some(idx) = self.selected_message {
+                        self.selected_message = Some(idx.saturating_sub(1));
+                    }
+                }
+            }
+            Action::ReplyTo => {
+                if self.mode == Mode::MessageSelect {
+                    if let Some(idx) = self.selected_message {
+                        if let Some(room) = self.rooms.get(self.selected_room) {
+                            if let Some(msgs) = self.messages.get(&room.id) {
+                                if let Some(msg) = msgs.get(idx) {
+                                    if let Some(ref eid) = msg.event_id {
+                                        self.reply_context = Some(ReplyContext {
+                                            event_id: eid.clone(),
+                                            sender: msg.sender.clone(),
+                                            body: msg.body.clone(),
+                                        });
+                                        self.mode = Mode::Insert;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Action::CancelReply => {
+                self.reply_context = None;
+            }
+            Action::DeleteMessage => {
+                // Only trigger from MessageSelect when a message is selected.
+                if self.mode == Mode::MessageSelect && self.selected_message.is_some() {
+                    self.confirm_delete = true;
+                }
+            }
+            Action::ConfirmDelete => {
+                // Handled in the event loop (needs async Matrix call).
+                // This action is dispatched but actual redact happens in run_app.
+            }
+            Action::CancelDelete => {
+                self.confirm_delete = false;
             }
             Action::None => {}
         }
@@ -347,5 +448,175 @@ mod tests {
         app.handle_action(Action::ModeInsert);
         app.handle_action(Action::RoomNext);
         assert_eq!(app.selected_room, 0); // did not move
+    }
+
+    // -- MessageSelect mode --
+
+    #[test]
+    fn test_enter_message_select_mode() {
+        let mut app = App::new();
+        app.rooms = make_rooms(3);
+        // Add messages for room 0.
+        app.messages.insert(
+            "!room0:example.com".to_string(),
+            vec![Message {
+                event_id: Some("$ev1".to_string()),
+                sender: "alice".to_string(),
+                body: "hello".to_string(),
+                timestamp: chrono::Utc::now(),
+                is_own: false,
+                reply_to: None,
+            }],
+        );
+        app.handle_action(Action::EnterMessageSelect);
+        assert_eq!(app.mode, Mode::MessageSelect);
+        // selected_message should be last message index (newest).
+        assert_eq!(app.selected_message, Some(0));
+    }
+
+    #[test]
+    fn test_message_select_next_prev() {
+        let mut app = App::new();
+        app.rooms = make_rooms(1);
+        app.messages.insert(
+            "!room0:example.com".to_string(),
+            vec![
+                Message {
+                    event_id: Some("$ev1".to_string()),
+                    sender: "a".to_string(),
+                    body: "first".to_string(),
+                    timestamp: chrono::Utc::now(),
+                    is_own: false,
+                    reply_to: None,
+                },
+                Message {
+                    event_id: Some("$ev2".to_string()),
+                    sender: "b".to_string(),
+                    body: "second".to_string(),
+                    timestamp: chrono::Utc::now(),
+                    is_own: false,
+                    reply_to: None,
+                },
+            ],
+        );
+        app.mode = Mode::MessageSelect;
+        app.selected_message = Some(1); // start at last
+        app.handle_action(Action::MessagePrev);
+        assert_eq!(app.selected_message, Some(0));
+        app.handle_action(Action::MessageNext);
+        assert_eq!(app.selected_message, Some(1));
+    }
+
+    #[test]
+    fn test_message_select_clamp() {
+        let mut app = App::new();
+        app.rooms = make_rooms(1);
+        app.messages.insert(
+            "!room0:example.com".to_string(),
+            vec![Message {
+                event_id: None,
+                sender: "a".to_string(),
+                body: "only".to_string(),
+                timestamp: chrono::Utc::now(),
+                is_own: false,
+                reply_to: None,
+            }],
+        );
+        app.mode = Mode::MessageSelect;
+        app.selected_message = Some(0);
+        app.handle_action(Action::MessagePrev); // can't go below 0
+        assert_eq!(app.selected_message, Some(0));
+        app.handle_action(Action::MessageNext); // can't go above 0
+        assert_eq!(app.selected_message, Some(0));
+    }
+
+    #[test]
+    fn test_reply_to_sets_context() {
+        let mut app = App::new();
+        app.rooms = make_rooms(1);
+        app.messages.insert(
+            "!room0:example.com".to_string(),
+            vec![Message {
+                event_id: Some("$ev1".to_string()),
+                sender: "alice".to_string(),
+                body: "hello world".to_string(),
+                timestamp: chrono::Utc::now(),
+                is_own: false,
+                reply_to: None,
+            }],
+        );
+        app.mode = Mode::MessageSelect;
+        app.selected_message = Some(0);
+        app.handle_action(Action::ReplyTo);
+        assert_eq!(app.mode, Mode::Insert);
+        assert!(app.reply_context.is_some());
+        let ctx = app.reply_context.as_ref().unwrap();
+        assert_eq!(ctx.event_id, "$ev1");
+        assert_eq!(ctx.sender, "alice");
+    }
+
+    #[test]
+    fn test_cancel_reply() {
+        let mut app = App::new();
+        app.reply_context = Some(ReplyContext {
+            event_id: "$ev1".to_string(),
+            sender: "alice".to_string(),
+            body: "hello".to_string(),
+        });
+        app.mode = Mode::Insert;
+        app.handle_action(Action::CancelReply);
+        assert!(app.reply_context.is_none());
+        assert_eq!(app.mode, Mode::Insert); // stays in insert
+    }
+
+    #[test]
+    fn test_esc_from_message_select_goes_normal() {
+        let mut app = App::new();
+        app.mode = Mode::MessageSelect;
+        app.selected_message = Some(2);
+        app.handle_action(Action::ModeNormal);
+        assert_eq!(app.mode, Mode::Normal);
+        assert_eq!(app.selected_message, None);
+    }
+
+    #[test]
+    fn test_delete_message_sets_confirm() {
+        let mut app = App::new();
+        app.rooms = make_rooms(1);
+        app.messages.insert(
+            "!room0:example.com".to_string(),
+            vec![Message {
+                event_id: Some("$ev1".to_string()),
+                sender: "alice".to_string(),
+                body: "hello".to_string(),
+                timestamp: chrono::Utc::now(),
+                is_own: true,
+                reply_to: None,
+            }],
+        );
+        app.mode = Mode::MessageSelect;
+        app.selected_message = Some(0);
+        app.handle_action(Action::DeleteMessage);
+        assert!(app.confirm_delete);
+    }
+
+    #[test]
+    fn test_cancel_delete() {
+        let mut app = App::new();
+        app.mode = Mode::MessageSelect;
+        app.selected_message = Some(0);
+        app.confirm_delete = true;
+        app.handle_action(Action::CancelDelete);
+        assert!(!app.confirm_delete);
+        assert_eq!(app.mode, Mode::MessageSelect); // stays in select
+    }
+
+    #[test]
+    fn test_delete_requires_message_select_mode() {
+        let mut app = App::new();
+        app.mode = Mode::Normal;
+        app.selected_message = Some(0);
+        app.handle_action(Action::DeleteMessage);
+        assert!(!app.confirm_delete); // should not trigger outside MessageSelect
     }
 }

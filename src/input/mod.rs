@@ -9,6 +9,7 @@ use crate::config::KeymapConfig;
 pub struct KeymapManager {
     normal: HashMap<String, Action>,
     insert: HashMap<String, Action>,
+    message_select: HashMap<String, Action>,
     pending_key: Option<(char, Instant)>,
     multi_key_timeout: Duration,
 }
@@ -30,9 +31,22 @@ impl KeymapManager {
             }
         }
 
+        let mut message_select = HashMap::new();
+        for (key, action_str) in &config.message_select {
+            if let Some(action) = Self::parse_action(action_str) {
+                message_select.insert(key.clone(), action);
+            }
+        }
+        // Fall back to defaults if config section was empty.
+        if message_select.is_empty() {
+            let default = Self::default_keymap();
+            message_select = default.message_select;
+        }
+
         Self {
             normal,
             insert,
+            message_select,
             pending_key: None,
             multi_key_timeout: Duration::from_millis(500),
         }
@@ -48,7 +62,7 @@ impl KeymapManager {
         normal.insert("i".to_string(), Action::ModeInsert);
         normal.insert(":".to_string(), Action::ModeCommand);
         normal.insert("/".to_string(), Action::RoomFilter);
-        normal.insert("Enter".to_string(), Action::OpenRoom);
+        normal.insert("Enter".to_string(), Action::EnterMessageSelect);
         normal.insert("r".to_string(), Action::MarkRead);
         normal.insert("R".to_string(), Action::MarkAllRead);
         normal.insert("Ctrl+u".to_string(), Action::ScrollUp);
@@ -58,9 +72,21 @@ impl KeymapManager {
         insert.insert("Esc".to_string(), Action::ModeNormal);
         insert.insert("Enter".to_string(), Action::SendMessage);
 
+        let mut message_select = HashMap::new();
+        message_select.insert("j".to_string(), Action::MessageNext);
+        message_select.insert("k".to_string(), Action::MessagePrev);
+        message_select.insert("Down".to_string(), Action::MessageNext);
+        message_select.insert("Up".to_string(), Action::MessagePrev);
+        message_select.insert("r".to_string(), Action::ReplyTo);
+        message_select.insert("d".to_string(), Action::DeleteMessage);
+        message_select.insert("i".to_string(), Action::ModeInsert);
+        message_select.insert("q".to_string(), Action::Quit);
+        message_select.insert("Esc".to_string(), Action::ModeNormal);
+
         Self {
             normal,
             insert,
+            message_select,
             pending_key: None,
             multi_key_timeout: Duration::from_millis(500),
         }
@@ -74,6 +100,7 @@ impl KeymapManager {
         match mode {
             Mode::Normal => self.resolve_normal(key),
             Mode::Insert => self.resolve_insert(key),
+            Mode::MessageSelect => self.resolve_message_select(key),
             Mode::Command(_) => self.resolve_command(key),
         }
     }
@@ -115,6 +142,11 @@ impl KeymapManager {
         }
     }
 
+    fn resolve_message_select(&mut self, key: KeyEvent) -> Option<Action> {
+        let key_str = Self::key_event_to_string(&key);
+        self.message_select.get(&key_str).cloned()
+    }
+
     /// Parse an action name string into the corresponding Action enum variant.
     pub fn parse_action(s: &str) -> Option<Action> {
         match s {
@@ -133,6 +165,14 @@ impl KeymapManager {
             "send_message" => Some(Action::SendMessage),
             "mark_read" => Some(Action::MarkRead),
             "mark_all_read" => Some(Action::MarkAllRead),
+            "enter_message_select" => Some(Action::EnterMessageSelect),
+            "message_next" => Some(Action::MessageNext),
+            "message_prev" => Some(Action::MessagePrev),
+            "reply_to" => Some(Action::ReplyTo),
+            "cancel_reply" => Some(Action::CancelReply),
+            "delete_message" => Some(Action::DeleteMessage),
+            "confirm_delete" => Some(Action::ConfirmDelete),
+            "cancel_delete" => Some(Action::CancelDelete),
             _ => None,
         }
     }
