@@ -20,8 +20,9 @@
 | | tracing-appender | 0.2 | File appender |
 | **Error** | color-eyre | 0.6 | Error reports + terminal restore on panic |
 | | thiserror | 1.x | Custom error types |
-| **Unicode** | unicode-width | 0.1 | Display width calculation |
-| | unicode-segmentation | 1.x | Grapheme clusters |
+| **Unicode** | unicode-width | 0.1 | Display width calculation (CJK, Vietnamese diacritics) |
+| | unicode-segmentation | 1.x | Grapheme clusters (combining characters, diacritics) |
+| | unicode-normalization | 0.1 | NFC/NFD normalization (critical for Vietnamese text) |
 | | emojis | 0.5 | Emoji shortcodes |
 | **Storage** | rusqlite | 0.38 | Local data (bundled SQLite) |
 | **Clipboard** | arboard | 3.x | Copy/paste (wayland-data-control) |

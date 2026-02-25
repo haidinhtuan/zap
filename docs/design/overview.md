@@ -9,6 +9,7 @@
 - Configurable keybindings (vim default)
 - Hacker aesthetic — functional with style
 - Multi-platform messaging through Matrix bridges
+- Full Unicode support (Vietnamese, CJK, emoji, combining characters)
 
 ## Non-goals (for now)
 
