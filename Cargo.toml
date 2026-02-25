@@ -1,0 +1,37 @@
+[package]
+name = "zap"
+version = "0.1.0"
+edition = "2021"
+description = "A terminal messenger client using Matrix bridges"
+license = "MIT"
+
+[dependencies]
+ratatui = "0.30"
+crossterm = { version = "0.28", features = ["event-stream"] }
+tui-textarea = { version = "0.7", features = ["crossterm"] }
+matrix-sdk = { version = "0.14", default-features = false, features = ["e2e-encryption", "bundled-sqlite", "rustls-tls"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+futures = "0.3"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+clap = { version = "4", features = ["derive"] }
+dirs = "5"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+color-eyre = "0.6"
+thiserror = "1"
+unicode-width = "0.1"
+unicode-segmentation = "1"
+unicode-normalization = "0.1"
+emojis = "0.5"
+rusqlite = { version = "0.37", features = ["bundled"] }
+arboard = { version = "3", features = ["wayland-data-control"] }
+chrono = "0.4"
+url = "2"
+linkify = "0.10"
+rpassword = "7"
+open = "5"
+
+[dev-dependencies]
+tempfile = "3"
