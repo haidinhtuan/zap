@@ -271,6 +271,8 @@ pub async fn run_app(
             Some(matrix_event) = matrix_rx.recv() => {
                 match matrix_event {
                     MatrixEvent::RoomListUpdate(rooms) => {
+                        // Remember current room ID before replacing the list.
+                        let current_room_id = app.rooms.get(app.selected_room).map(|r| r.id.clone());
                         app.rooms = rooms;
                         // Sort rooms by most recent message timestamp (descending).
                         let msgs = &app.messages;
@@ -283,6 +285,12 @@ pub async fn run_app(
                                 .or(b.last_activity);
                             b_ts.cmp(&a_ts)
                         });
+                        // Restore selection to the same room after re-sort.
+                        if let Some(ref cid) = current_room_id {
+                            if let Some(pos) = app.rooms.iter().position(|r| &r.id == cid) {
+                                app.selected_room = pos;
+                            }
+                        }
                         app.connection_status = app::ConnectionStatus::Connected;
                         tracing::debug!("Room list updated: {} rooms", app.rooms.len());
                     }
@@ -298,7 +306,8 @@ pub async fn run_app(
                             continue;
                         }
                         msgs.push(message);
-                        // Re-sort rooms after new message.
+                        // Re-sort rooms after new message, preserving selection.
+                        let current_room_id = app.rooms.get(app.selected_room).map(|r| r.id.clone());
                         let msgs = &app.messages;
                         app.rooms.sort_by(|a, b| {
                             let a_ts = msgs.get(&a.id)
@@ -309,6 +318,11 @@ pub async fn run_app(
                                 .or(b.last_activity);
                             b_ts.cmp(&a_ts)
                         });
+                        if let Some(ref cid) = current_room_id {
+                            if let Some(pos) = app.rooms.iter().position(|r| &r.id == cid) {
+                                app.selected_room = pos;
+                            }
+                        }
                     }
                     MatrixEvent::SyncError(err) => {
                         tracing::warn!("Matrix sync error: {}", err);
