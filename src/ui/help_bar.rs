@@ -15,6 +15,13 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         Mode::Insert => {
             " [Enter]send  [Shift+Enter]newline  [Esc]back  \u{26a1}zap"
         }
+        Mode::MessageSelect => {
+            if app.confirm_delete {
+                " Delete message? y:yes  n:cancel  \u{26a1}zap"
+            } else {
+                " j/k:nav  r:reply  d:delete  i:compose  Esc:back  \u{26a1}zap"
+            }
+        }
         Mode::Command(_) => {
             " [Enter]execute  [Esc]cancel  \u{26a1}zap"
         }

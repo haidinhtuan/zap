@@ -24,9 +24,10 @@ pub fn draw(frame: &mut Frame, app: &App) {
     .areas(body_area);
 
     // Split chat_area into message view and compose bar.
+    let compose_height = if app.reply_context.is_some() { 4 } else { 3 };
     let [message_area, compose_area] = Layout::vertical([
         Constraint::Fill(1),
-        Constraint::Length(3),
+        Constraint::Length(compose_height),
     ])
     .areas(chat_area);
 

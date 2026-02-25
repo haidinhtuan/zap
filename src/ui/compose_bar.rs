@@ -8,13 +8,45 @@ use crate::app::{App, Mode};
 
 /// Render the compose bar input area with mode-sensitive prefix and cursor.
 pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
+    use ratatui::layout::{Constraint, Layout};
+
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::DarkGray));
 
+    // If there's a reply context, split area into reply preview + input.
+    let (reply_area, input_area) = if app.reply_context.is_some() {
+        let chunks = Layout::vertical([Constraint::Length(1), Constraint::Length(1)])
+            .split(block.inner(area));
+        (Some(chunks[0]), chunks[1])
+    } else {
+        (None, block.inner(area))
+    };
+
+    // Render the outer block.
+    frame.render_widget(block, area);
+
+    // Render reply preview line if active.
+    if let Some(ref ctx) = app.reply_context {
+        if let Some(reply_rect) = reply_area {
+            let truncated_body: String = ctx.body.chars().take(40).collect();
+            let reply_line = Line::from(vec![
+                Span::styled(" \u{21a9} ", Style::default().fg(Color::Yellow)),
+                Span::styled(&ctx.sender, Style::default().fg(Color::Cyan)),
+                Span::styled(
+                    format!(": \"{}\"", truncated_body),
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ]);
+            frame.render_widget(Paragraph::new(reply_line), reply_rect);
+        }
+    }
+
+    // Render input line.
     let (prefix, prefix_style) = match &app.mode {
         Mode::Normal => (">", Style::default().fg(Color::DarkGray)),
         Mode::Insert => (">>>", Style::default().fg(Color::Green)),
+        Mode::MessageSelect => (">", Style::default().fg(Color::Yellow)),
         Mode::Command(_) => (":", Style::default().fg(Color::Yellow)),
     };
 
@@ -30,9 +62,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
     }
 
     let line = Line::from(spans);
-    let paragraph = Paragraph::new(line).block(block);
-
-    frame.render_widget(paragraph, area);
+    frame.render_widget(Paragraph::new(line), input_area);
 }
 
 // ---------------------------------------------------------------------------
@@ -121,5 +151,19 @@ mod tests {
             "Should show input buffer content, got:\n{}",
             content
         );
+    }
+
+    #[test]
+    fn test_compose_bar_shows_reply_preview() {
+        let mut app = App::new();
+        app.mode = Mode::Insert;
+        app.reply_context = Some(crate::app::ReplyContext {
+            event_id: "$ev1".to_string(),
+            sender: "alice".to_string(),
+            body: "hello world".to_string(),
+        });
+        let buf = render_compose_bar(&app, 60, 4);
+        let content = buffer_content(&buf);
+        assert!(content.contains("alice"), "Should show reply sender, got:\n{}", content);
     }
 }

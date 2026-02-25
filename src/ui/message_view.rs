@@ -4,13 +4,18 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
 
-use crate::app::App;
+use crate::app::{App, Mode};
 
 /// Render the message view area showing the room header and message list.
 pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
+    let border_color = match app.mode {
+        Mode::MessageSelect => Color::Yellow,
+        _ => Color::DarkGray,
+    };
+
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::DarkGray));
+        .border_style(Style::default().fg(border_color));
 
     // If no room is selected, show a placeholder.
     let current_room = app.rooms.get(app.selected_room);
@@ -53,16 +58,23 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
 
     // Build lines for each message.
     let mut lines: Vec<Line> = Vec::new();
-    for msg in messages {
+    for (i, msg) in messages.iter().enumerate() {
         let timestamp = msg.timestamp.format("%H:%M").to_string();
 
-        let sender_style = if msg.is_own {
+        let is_selected = app.mode == Mode::MessageSelect && app.selected_message == Some(i);
+        let is_delete_target = is_selected && app.confirm_delete;
+
+        let sender_style = if is_delete_target {
+            Style::default().fg(Color::Red).add_modifier(Modifier::CROSSED_OUT)
+        } else if msg.is_own {
             Style::default().fg(Color::Green)
         } else {
             Style::default().fg(Color::Cyan)
         };
 
-        let body_style = if msg.is_own {
+        let body_style = if is_delete_target {
+            Style::default().fg(Color::Red).add_modifier(Modifier::CROSSED_OUT)
+        } else if msg.is_own {
             Style::default().fg(Color::Green)
         } else {
             Style::default()
@@ -72,16 +84,57 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
             .fg(Color::DarkGray)
             .add_modifier(Modifier::DIM);
 
+        // Show reply indicator if this message is a reply.
+        if let Some(ref reply_eid) = msg.reply_to {
+            let prefix = if is_selected { ">>" } else { "  " };
+            // Look up the replied-to message by event_id.
+            let reply_text = messages.iter()
+                .find(|m| m.event_id.as_deref() == Some(reply_eid.as_str()))
+                .map(|m| {
+                    let body: String = m.body.chars().take(40).collect();
+                    format!("| {} : {}", m.sender, body)
+                })
+                .unwrap_or_else(|| "| reply".to_string());
+            lines.push(Line::from(vec![
+                Span::raw(format!("{}     ", prefix)),
+                Span::styled(
+                    reply_text,
+                    Style::default()
+                        .fg(Color::DarkGray)
+                        .add_modifier(Modifier::ITALIC),
+                ),
+            ]));
+        }
+
+        let (marker, marker_style) = if is_delete_target {
+            ("xx", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD))
+        } else if is_selected {
+            (">>", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+        } else {
+            ("  ", Style::default())
+        };
+        let display_name = if msg.is_own { "You".to_string() } else { msg.sender.clone() };
         lines.push(Line::from(vec![
+            Span::styled(
+                marker,
+                marker_style,
+            ),
             Span::styled(timestamp, timestamp_style),
             Span::raw(" "),
-            Span::styled(msg.sender.clone(), sender_style),
+            Span::styled(display_name, sender_style),
             Span::raw(": "),
             Span::styled(msg.body.clone(), body_style),
         ]));
     }
 
-    let paragraph = Paragraph::new(lines).block(block);
+    // Scroll so the newest messages (bottom) are visible.
+    // Inner height = area height - 2 (for borders).
+    let inner_height = area.height.saturating_sub(2) as usize;
+    let scroll_offset = lines.len().saturating_sub(inner_height);
+
+    let paragraph = Paragraph::new(lines)
+        .block(block)
+        .scroll((scroll_offset as u16, 0));
     frame.render_widget(paragraph, area);
 }
 
@@ -92,7 +145,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::{App, Message, Room};
+    use crate::app::{App, Message, Mode, Room};
     use chrono::{TimeZone, Utc};
     use ratatui::backend::TestBackend;
     use ratatui::buffer::Buffer;
@@ -139,16 +192,20 @@ mod tests {
             "!room0:example.com".to_string(),
             vec![
                 Message {
+                    event_id: None,
                     sender: "alice".to_string(),
                     body: "Hello world".to_string(),
                     timestamp: Utc.with_ymd_and_hms(2025, 1, 15, 14, 0, 0).unwrap(),
                     is_own: true,
+                    reply_to: None,
                 },
                 Message {
+                    event_id: None,
                     sender: "bob".to_string(),
                     body: "Hi there".to_string(),
                     timestamp: Utc.with_ymd_and_hms(2025, 1, 15, 14, 5, 0).unwrap(),
                     is_own: false,
+                    reply_to: None,
                 },
             ],
         );
@@ -191,8 +248,8 @@ mod tests {
         let buf = render_message_view(&app, 60, 10);
         let content = buffer_content(&buf);
         assert!(
-            content.contains("alice"),
-            "Should show sender 'alice', got:\n{}",
+            content.contains("You"),
+            "Should show 'You' for own messages instead of sender name, got:\n{}",
             content
         );
         assert!(
@@ -230,10 +287,12 @@ mod tests {
         messages.insert(
             "!room0:example.com".to_string(),
             vec![Message {
+                event_id: None,
                 sender: "trang".to_string(),
                 body: "Xin ch\u{00e0}o b\u{1ea1}n".to_string(),
                 timestamp: Utc.with_ymd_and_hms(2025, 1, 15, 14, 0, 0).unwrap(),
                 is_own: false,
+                reply_to: None,
             }],
         );
         app.messages = messages;
@@ -275,5 +334,15 @@ mod tests {
             "Should show 'No messages' for room with no messages, got:\n{}",
             content
         );
+    }
+
+    #[test]
+    fn test_message_view_shows_selection_marker() {
+        let mut app = make_app_with_messages();
+        app.mode = Mode::MessageSelect;
+        app.selected_message = Some(1);
+        let buf = render_message_view(&app, 60, 10);
+        let content = buffer_content(&buf);
+        assert!(content.contains(">>"), "Should show '>>' marker, got:\n{}", content);
     }
 }
