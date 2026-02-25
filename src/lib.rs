@@ -3,7 +3,11 @@ pub mod app;
 pub mod config;
 pub mod error;
 pub mod event;
+pub mod input;
 pub mod logging;
+pub mod matrix;
+pub mod store;
+pub mod ui;
 
 use app::{Action, App, Mode};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -62,20 +66,7 @@ pub async fn run_app(
                     }
                     Event::Render => {
                         terminal.draw(|frame| {
-                            // Minimal placeholder rendering.
-                            let mode_str = match &app.mode {
-                                Mode::Normal => "NORMAL",
-                                Mode::Insert => "INSERT",
-                                Mode::Command(_) => "COMMAND",
-                            };
-                            let status = match &app.connection_status {
-                                app::ConnectionStatus::Connected => "Connected",
-                                app::ConnectionStatus::Connecting => "Connecting...",
-                                app::ConnectionStatus::Disconnected => "Disconnected",
-                            };
-                            let text = format!("zap v0.1.0 | {} | {} | Press 'q' to quit", mode_str, status);
-                            let paragraph = ratatui::widgets::Paragraph::new(text);
-                            frame.render_widget(paragraph, frame.area());
+                            ui::draw(frame, app);
                         })?;
                     }
                     Event::Tick => {
