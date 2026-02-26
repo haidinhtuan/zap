@@ -42,6 +42,7 @@ pub fn map_key_to_action(key: KeyEvent, mode: &Mode) -> Action {
             KeyCode::Char('j') | KeyCode::Down => Action::MessageNext,
             KeyCode::Char('k') | KeyCode::Up => Action::MessagePrev,
             KeyCode::Char('r') => Action::ReplyTo,
+            KeyCode::Char('e') => Action::EditMessage,
             KeyCode::Char('d') => Action::DeleteMessage,
             KeyCode::Char('i') => Action::ModeInsert,
             KeyCode::Char('q') => Action::Quit,
@@ -102,49 +103,64 @@ pub async fn run_app(
                             match key.code {
                                 KeyCode::Char('x') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                                     app.reply_context = None;
+                                    app.edit_context = None;
+                                    app.textarea_clear();
                                     continue;
                                 }
-                                KeyCode::Char(c) => {
-                                    app.input_buffer.push(c);
-                                    continue;
-                                }
-                                KeyCode::Backspace => {
-                                    app.input_buffer.pop();
-                                    continue;
-                                }
-                                KeyCode::Enter => {
-                                    // Send message.
-                                    if !app.input_buffer.is_empty() {
-                                        let msg_text = app.input_buffer.clone();
-                                        app.input_buffer.clear();
+                                KeyCode::Enter if !key.modifiers.contains(KeyModifiers::SHIFT) => {
+                                    // Send message or edit.
+                                    let msg_text = app.textarea_text();
+                                    if !msg_text.is_empty() {
+                                        app.textarea_clear();
                                         let reply_ctx = app.reply_context.take();
+                                        let edit_ctx = app.edit_context.take();
 
                                         if let Some(client) = matrix_client {
                                             if let Some(room_data) = app.rooms.get(app.selected_room) {
                                                 let room_id_str = room_data.id.clone();
                                                 if let Ok(rid) = matrix_sdk::ruma::RoomId::parse(&room_id_str) {
                                                     if let Some(room) = client.get_room(&rid) {
-                                                        let content = if let Some(ref ctx) = reply_ctx {
-                                                            if let Ok(event_id) = matrix_sdk::ruma::EventId::parse(&ctx.event_id) {
-                                                                use matrix_sdk::ruma::events::room::message::{ForwardThread, AddMentions};
-                                                                use matrix_sdk::ruma::events::room::message::ReplyMetadata;
-                                                                let reply_meta = ReplyMetadata::new(
-                                                                    &event_id,
-                                                                    matrix_sdk::ruma::user_id!("@unknown:localhost"),
-                                                                    None,
+                                                        if let Some(ref ectx) = edit_ctx {
+                                                            // Edit existing message.
+                                                            if let Ok(original_event_id) = matrix_sdk::ruma::EventId::parse(&ectx.event_id) {
+                                                                use matrix_sdk::ruma::events::room::message::{
+                                                                    RoomMessageEventContentWithoutRelation,
+                                                                    ReplacementMetadata,
+                                                                };
+                                                                let new_content = RoomMessageEventContentWithoutRelation::text_plain(&msg_text);
+                                                                let replacement = new_content.make_replacement(
+                                                                    ReplacementMetadata::new(original_event_id, None),
                                                                 );
-                                                                RoomMessageEventContent::text_plain(&msg_text)
-                                                                    .make_reply_to(reply_meta, ForwardThread::Yes, AddMentions::No)
-                                                            } else {
-                                                                RoomMessageEventContent::text_plain(&msg_text)
+                                                                if let Err(e) = room.send(replacement).await {
+                                                                    tracing::warn!("Failed to send edit: {}", e);
+                                                                    app.edit_context = edit_ctx;
+                                                                    app.textarea.insert_str(&msg_text);
+                                                                }
                                                             }
                                                         } else {
-                                                            RoomMessageEventContent::text_plain(&msg_text)
-                                                        };
+                                                            let content = if let Some(ref ctx) = reply_ctx {
+                                                                if let Ok(event_id) = matrix_sdk::ruma::EventId::parse(&ctx.event_id) {
+                                                                    use matrix_sdk::ruma::events::room::message::{ForwardThread, AddMentions};
+                                                                    use matrix_sdk::ruma::events::room::message::ReplyMetadata;
+                                                                    let reply_meta = ReplyMetadata::new(
+                                                                        &event_id,
+                                                                        matrix_sdk::ruma::user_id!("@unknown:localhost"),
+                                                                        None,
+                                                                    );
+                                                                    RoomMessageEventContent::text_plain(&msg_text)
+                                                                        .make_reply_to(reply_meta, ForwardThread::Yes, AddMentions::No)
+                                                                } else {
+                                                                    RoomMessageEventContent::text_plain(&msg_text)
+                                                                }
+                                                            } else {
+                                                                RoomMessageEventContent::text_plain(&msg_text)
+                                                            };
 
-                                                        if let Err(e) = room.send(content).await {
-                                                            tracing::warn!("Failed to send message: {}", e);
-                                                            app.reply_context = reply_ctx;
+                                                            if let Err(e) = room.send(content).await {
+                                                                tracing::warn!("Failed to send message: {}", e);
+                                                                app.reply_context = reply_ctx;
+                                                                app.textarea.insert_str(&msg_text);
+                                                            }
                                                         }
                                                     }
                                                 }
@@ -156,10 +172,16 @@ pub async fn run_app(
                                 KeyCode::Esc => {
                                     app.mode = Mode::Normal;
                                     app.reply_context = None;
+                                    app.edit_context = None;
                                     app.selected_message = None;
+                                    app.textarea_clear();
                                     continue;
                                 }
-                                _ => continue,
+                                _ => {
+                                    // Forward all other keys to TextArea for cursor/selection/clipboard.
+                                    app.textarea.input(key);
+                                    continue;
+                                }
                             }
                         }
 
@@ -254,7 +276,6 @@ pub async fn run_app(
                         // Normal mode: use keymap.
                         if let Some(action) = keymap.resolve(key, &app.mode) {
                             app.handle_action(action);
-                        } else {
                         }
                     }
                     Event::Render => {
@@ -324,6 +345,13 @@ pub async fn run_app(
                             }
                         }
                     }
+                    MatrixEvent::MessageEdited { room_id, event_id, new_body } => {
+                        if let Some(msgs) = app.messages.get_mut(&room_id) {
+                            if let Some(msg) = msgs.iter_mut().find(|m| m.event_id.as_deref() == Some(&event_id)) {
+                                msg.body = new_body;
+                            }
+                        }
+                    }
                     MatrixEvent::SyncError(err) => {
                         tracing::warn!("Matrix sync error: {}", err);
                         app.connection_status = app::ConnectionStatus::Disconnected;
@@ -348,6 +376,12 @@ async fn load_room_messages(app: &mut App, room: &matrix_sdk::Room, room_id: &st
 
     let mut options = MessagesOptions::backward();
     options.limit = 50u32.into();
+    // Filter to only fetch message events so state events (member joins,
+    // room config, etc.) don't consume the limit in bridged/group rooms.
+    options.filter.types = Some(vec![
+        "m.room.message".to_owned(),
+        "m.room.encrypted".to_owned(),
+    ]);
 
     match room.messages(options).await {
         Ok(response) => {
@@ -360,6 +394,21 @@ async fn load_room_messages(app: &mut App, room: &matrix_sdk::Room, room_id: &st
                     ) = event
                     {
                         if let matrix_sdk::ruma::events::room::message::SyncRoomMessageEvent::Original(orig) = msg_event {
+                            // Detect replacement (edit) relation.
+                            if let Some(matrix_sdk::ruma::events::room::message::Relation::Replacement(replacement)) = &orig.content.relates_to {
+                                let target_eid = replacement.event_id.to_string();
+                                let new_body = match &replacement.new_content.msgtype {
+                                    MessageType::Text(text) => text.body.clone(),
+                                    MessageType::Notice(notice) => notice.body.clone(),
+                                    MessageType::Emote(emote) => format!("* {}", emote.body),
+                                    _ => continue,
+                                };
+                                if let Some(original) = messages.iter_mut().find(|m| m.event_id.as_deref() == Some(&target_eid)) {
+                                    original.body = new_body;
+                                }
+                                continue;
+                            }
+
                             let body = match orig.content.msgtype {
                                 MessageType::Text(text) => text.body,
                                 MessageType::Notice(notice) => notice.body,

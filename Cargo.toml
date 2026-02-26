@@ -8,7 +8,7 @@ license = "MIT"
 [dependencies]
 ratatui = "0.30"
 crossterm = { version = "0.28", features = ["event-stream"] }
-tui-textarea = { version = "0.7", features = ["crossterm"] }
+tui-textarea = { version = "0.10", package = "tui-textarea-2", default-features = false, features = ["crossterm_0_28"] }
 matrix-sdk = { version = "0.14", default-features = false, features = ["e2e-encryption", "bundled-sqlite", "rustls-tls"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 futures = "0.3"

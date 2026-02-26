@@ -31,6 +31,13 @@ pub struct ReplyContext {
     pub body: String,
 }
 
+/// Context for an in-progress message edit.
+#[derive(Debug, Clone)]
+pub struct EditContext {
+    pub event_id: String,
+    pub room_id: String,
+}
+
 /// The current input mode of the application.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Mode {
@@ -74,6 +81,7 @@ pub enum Action {
     SendMessage,
     MarkRead,
     MarkAllRead,
+    EditMessage,
     None,
 }
 
@@ -83,13 +91,14 @@ pub struct App {
     pub selected_room: usize,
     pub messages: BTreeMap<String, Vec<Message>>,
     pub mode: Mode,
-    pub input_buffer: String,
+    pub textarea: tui_textarea::TextArea<'static>,
     pub scroll_offset: usize,
     pub should_quit: bool,
     pub connection_status: ConnectionStatus,
     pub theme: Option<ThemeConfig>,
     pub selected_message: Option<usize>,
     pub reply_context: Option<ReplyContext>,
+    pub edit_context: Option<EditContext>,
     /// When true, the UI shows a delete confirmation prompt.
     pub confirm_delete: bool,
     /// The logged-in user's Matrix ID (e.g. "@haidinhtuan:localhost").
@@ -104,16 +113,37 @@ impl App {
             selected_room: 0,
             messages: BTreeMap::new(),
             mode: Mode::Normal,
-            input_buffer: String::new(),
+            textarea: {
+                let mut ta = tui_textarea::TextArea::default();
+                ta.set_cursor_line_style(ratatui::style::Style::default());
+                ta.set_block(ratatui::widgets::Block::default());
+                ta
+            },
             scroll_offset: 0,
             should_quit: false,
             connection_status: ConnectionStatus::Disconnected,
             theme: None,
             selected_message: None,
             reply_context: None,
+            edit_context: None,
             confirm_delete: false,
             own_user_id: None,
         }
+    }
+
+    /// Extract the current text from the TextArea as a single string.
+    pub fn textarea_text(&self) -> String {
+        self.textarea.lines().join("\n")
+    }
+
+    /// Clear the TextArea content.
+    pub fn textarea_clear(&mut self) {
+        self.textarea = {
+            let mut ta = tui_textarea::TextArea::default();
+            ta.set_cursor_line_style(ratatui::style::Style::default());
+            ta.set_block(ratatui::widgets::Block::default());
+            ta
+        };
     }
 
     /// Dispatch an action and mutate application state accordingly.
@@ -125,6 +155,7 @@ impl App {
             Action::ModeNormal => {
                 self.mode = Mode::Normal;
                 self.selected_message = None;
+                self.edit_context = None;
             }
             Action::ModeInsert => {
                 if self.mode == Mode::Normal {
@@ -233,6 +264,7 @@ impl App {
             }
             Action::CancelReply => {
                 self.reply_context = None;
+                self.edit_context = None;
             }
             Action::DeleteMessage => {
                 // Only trigger from MessageSelect when a message is selected.
@@ -246,6 +278,32 @@ impl App {
             }
             Action::CancelDelete => {
                 self.confirm_delete = false;
+            }
+            Action::EditMessage => {
+                if self.mode == Mode::MessageSelect {
+                    if let Some(idx) = self.selected_message {
+                        // Extract needed data before mutating self.
+                        let edit_info = self.rooms.get(self.selected_room).and_then(|room| {
+                            self.messages.get(&room.id).and_then(|msgs| {
+                                msgs.get(idx).and_then(|msg| {
+                                    if msg.is_own {
+                                        msg.event_id.as_ref().map(|eid| {
+                                            (eid.clone(), room.id.clone(), msg.body.clone())
+                                        })
+                                    } else {
+                                        None
+                                    }
+                                })
+                            })
+                        });
+                        if let Some((event_id, room_id, body)) = edit_info {
+                            self.edit_context = Some(EditContext { event_id, room_id });
+                            self.textarea_clear();
+                            self.textarea.insert_str(&body);
+                            self.mode = Mode::Insert;
+                        }
+                    }
+                }
             }
             Action::None => {}
         }
@@ -618,5 +676,52 @@ mod tests {
         app.selected_message = Some(0);
         app.handle_action(Action::DeleteMessage);
         assert!(!app.confirm_delete); // should not trigger outside MessageSelect
+    }
+
+    #[test]
+    fn test_edit_message_sets_context() {
+        let mut app = App::new();
+        app.rooms = make_rooms(1);
+        app.messages.insert(
+            "!room0:example.com".to_string(),
+            vec![Message {
+                event_id: Some("$ev1".to_string()),
+                sender: "alice".to_string(),
+                body: "hello world".to_string(),
+                timestamp: chrono::Utc::now(),
+                is_own: true,
+                reply_to: None,
+            }],
+        );
+        app.mode = Mode::MessageSelect;
+        app.selected_message = Some(0);
+        app.handle_action(Action::EditMessage);
+        assert_eq!(app.mode, Mode::Insert);
+        assert!(app.edit_context.is_some());
+        let ctx = app.edit_context.as_ref().unwrap();
+        assert_eq!(ctx.event_id, "$ev1");
+        assert_eq!(app.textarea_text(), "hello world");
+    }
+
+    #[test]
+    fn test_edit_message_ignores_others_messages() {
+        let mut app = App::new();
+        app.rooms = make_rooms(1);
+        app.messages.insert(
+            "!room0:example.com".to_string(),
+            vec![Message {
+                event_id: Some("$ev1".to_string()),
+                sender: "bob".to_string(),
+                body: "hello".to_string(),
+                timestamp: chrono::Utc::now(),
+                is_own: false,
+                reply_to: None,
+            }],
+        );
+        app.mode = Mode::MessageSelect;
+        app.selected_message = Some(0);
+        app.handle_action(Action::EditMessage);
+        assert_eq!(app.mode, Mode::MessageSelect);
+        assert!(app.edit_context.is_none());
     }
 }

@@ -13,6 +13,12 @@ pub enum MatrixEvent {
     RoomListUpdate(Vec<Room>),
     /// A new message arrived in a specific room.
     NewMessage { room_id: String, message: Message },
+    /// An existing message was edited.
+    MessageEdited {
+        room_id: String,
+        event_id: String,
+        new_body: String,
+    },
     /// The sync loop encountered an error.
     SyncError(String),
 }
@@ -41,6 +47,23 @@ pub fn start_sync(client: Client) -> mpsc::UnboundedReceiver<MatrixEvent> {
                     ..
                 }) = event
                 {
+                    // Detect replacement (edit) relation before extracting body.
+                    if let Some(matrix_sdk::ruma::events::room::message::Relation::Replacement(replacement)) = &content.relates_to {
+                        let original_event_id = replacement.event_id.to_string();
+                        let new_body = match &replacement.new_content.msgtype {
+                            MessageType::Text(text) => text.body.clone(),
+                            MessageType::Notice(notice) => notice.body.clone(),
+                            MessageType::Emote(emote) => format!("* {}", emote.body),
+                            _ => return,
+                        };
+                        let _ = tx.send(MatrixEvent::MessageEdited {
+                            room_id: room.room_id().to_string(),
+                            event_id: original_event_id,
+                            new_body,
+                        });
+                        return;
+                    }
+
                     let body = match content.msgtype {
                         MessageType::Text(text) => text.body,
                         MessageType::Notice(notice) => notice.body,
@@ -217,6 +240,11 @@ mod tests {
                 is_own: false,
                 reply_to: None,
             },
+        };
+        let _edited = MatrixEvent::MessageEdited {
+            room_id: "!test:example.com".to_string(),
+            event_id: "$ev1".to_string(),
+            new_body: "edited hello".to_string(),
         };
         let _err = MatrixEvent::SyncError("timeout".to_string());
     }
