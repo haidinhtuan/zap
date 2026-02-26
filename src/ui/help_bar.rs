@@ -26,7 +26,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
             " [Enter]execute  [Esc]cancel  \u{26a1}zap"
         }
         Mode::RoomFilter => {
-            " Type to filter  [Enter]select  [Esc]cancel  \u{26a1}zap"
+            " Type to filter  @:DMs  #:groups  [Enter]select  [Esc]cancel  \u{26a1}zap"
         }
     };
 

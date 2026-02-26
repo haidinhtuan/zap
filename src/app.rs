@@ -9,6 +9,7 @@ pub struct Room {
     pub name: String,
     pub unread_count: u32,
     pub last_activity: Option<chrono::DateTime<chrono::Utc>>,
+    pub is_direct: bool,
 }
 
 /// Represents a single chat message.
@@ -153,15 +154,30 @@ impl App {
     }
 
     /// Get the list of room indices that match the current filter.
+    ///
+    /// Supports type prefixes: `@` filters DMs only, `#` filters groups only.
     pub fn filtered_room_indices(&self) -> Vec<usize> {
         if self.room_filter.is_empty() {
             (0..self.rooms.len()).collect()
         } else {
-            let filter_lower = self.room_filter.to_lowercase();
+            // Check for type prefix.
+            let (type_filter, name_filter) = if self.room_filter.starts_with('@') {
+                (Some(true), self.room_filter[1..].to_lowercase())
+            } else if self.room_filter.starts_with('#') {
+                (Some(false), self.room_filter[1..].to_lowercase())
+            } else {
+                (None, self.room_filter.to_lowercase())
+            };
+
             self.rooms
                 .iter()
                 .enumerate()
-                .filter(|(_, r)| r.name.to_lowercase().contains(&filter_lower))
+                .filter(|(_, r)| {
+                    let type_match = type_filter.map_or(true, |dm| r.is_direct == dm);
+                    let name_match = name_filter.is_empty()
+                        || r.name.to_lowercase().contains(&name_filter);
+                    type_match && name_match
+                })
                 .map(|(i, _)| i)
                 .collect()
         }
@@ -356,6 +372,7 @@ mod tests {
                 name: format!("Room {}", i),
                 unread_count: i as u32,
                 last_activity: None,
+                is_direct: false,
             })
             .collect()
     }
@@ -769,18 +786,21 @@ mod tests {
                 name: "General".to_string(),
                 unread_count: 0,
                 last_activity: None,
+                is_direct: false,
             },
             Room {
                 id: "!b:x".to_string(),
                 name: "Random".to_string(),
                 unread_count: 0,
                 last_activity: None,
+                is_direct: false,
             },
             Room {
                 id: "!c:x".to_string(),
                 name: "Dev General".to_string(),
                 unread_count: 0,
                 last_activity: None,
+                is_direct: false,
             },
         ];
         app.room_filter = "gen".to_string();
@@ -797,12 +817,14 @@ mod tests {
                 name: "General".to_string(),
                 unread_count: 0,
                 last_activity: None,
+                is_direct: false,
             },
             Room {
                 id: "!b:x".to_string(),
                 name: "Random".to_string(),
                 unread_count: 0,
                 last_activity: None,
+                is_direct: false,
             },
         ];
         app.room_filter = "GENERAL".to_string();

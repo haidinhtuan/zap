@@ -208,11 +208,14 @@ async fn get_room_list(client: &Client) -> Vec<Room> {
             })
         };
 
+        let is_direct = room.is_direct().await.unwrap_or(false);
+
         rooms.push(Room {
             id: room.room_id().to_string(),
             name,
             unread_count,
             last_activity,
+            is_direct,
         });
     }
 
@@ -257,6 +260,7 @@ mod tests {
             name: "Test Room".to_string(),
             unread_count: 5,
             last_activity: None,
+            is_direct: false,
         };
         assert_eq!(room.id, "!room:example.com");
         assert_eq!(room.name, "Test Room");

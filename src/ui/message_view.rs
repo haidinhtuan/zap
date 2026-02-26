@@ -184,6 +184,7 @@ mod tests {
             name: "General".to_string(),
             unread_count: 0,
             last_activity: Some(Utc.with_ymd_and_hms(2025, 1, 15, 14, 30, 0).unwrap()),
+            is_direct: false,
         };
         app.rooms.push(room);
         app.selected_room = 0;
@@ -280,6 +281,7 @@ mod tests {
             name: "Vietnamese".to_string(),
             unread_count: 0,
             last_activity: None,
+            is_direct: false,
         };
         app.rooms.push(room);
         app.selected_room = 0;
@@ -323,6 +325,7 @@ mod tests {
             name: "Empty".to_string(),
             unread_count: 0,
             last_activity: None,
+            is_direct: false,
         };
         app.rooms.push(room);
         app.selected_room = 0;

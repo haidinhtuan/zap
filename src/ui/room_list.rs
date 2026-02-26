@@ -34,22 +34,28 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
             let room = &app.rooms[idx];
             let mut spans = Vec::new();
 
+            // Unread indicator.
             if room.unread_count > 0 {
                 spans.push(Span::styled(
-                    "\u{25cf} ",
+                    "\u{25cf}",
                     Style::default().fg(Color::Red),
                 ));
-                spans.push(Span::styled(
-                    &room.name,
-                    Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
-                ));
             } else {
-                spans.push(Span::raw("  "));
-                spans.push(Span::styled(
-                    &room.name,
-                    Style::default().fg(Color::Gray),
-                ));
+                spans.push(Span::raw(" "));
             }
+
+            // DM vs group indicator.
+            let type_indicator = if room.is_direct { "@ " } else { "# " };
+            let type_color = if room.is_direct { Color::Green } else { Color::DarkGray };
+            spans.push(Span::styled(type_indicator, Style::default().fg(type_color)));
+
+            // Room name.
+            let name_style = if room.unread_count > 0 {
+                Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::Gray)
+            };
+            spans.push(Span::styled(&room.name, name_style));
 
             ListItem::new(Line::from(spans))
         })
@@ -113,18 +119,21 @@ mod tests {
                 name: "General".to_string(),
                 unread_count: 0,
                 last_activity: None,
+                is_direct: false,
             },
             Room {
                 id: "!room1:example.com".to_string(),
                 name: "Random".to_string(),
                 unread_count: 3,
                 last_activity: None,
+                is_direct: false,
             },
             Room {
                 id: "!room2:example.com".to_string(),
                 name: "Dev".to_string(),
                 unread_count: 0,
                 last_activity: None,
+                is_direct: false,
             },
         ]
     }

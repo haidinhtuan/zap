@@ -27,11 +27,14 @@ pub async fn get_room_details(client: &Client, room_id: &str) -> ZapResult<Optio
         .try_into()
         .unwrap_or(0u32);
 
+    let is_direct = room.is_direct().await.unwrap_or(false);
+
     Ok(Some(Room {
         id: room.room_id().to_string(),
         name,
         unread_count,
         last_activity: None,
+        is_direct,
     }))
 }
 
