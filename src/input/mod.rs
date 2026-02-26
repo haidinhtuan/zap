@@ -79,6 +79,7 @@ impl KeymapManager {
         message_select.insert("Up".to_string(), Action::MessagePrev);
         message_select.insert("r".to_string(), Action::ReplyTo);
         message_select.insert("d".to_string(), Action::DeleteMessage);
+        message_select.insert("e".to_string(), Action::EditMessage);
         message_select.insert("i".to_string(), Action::ModeInsert);
         message_select.insert("q".to_string(), Action::Quit);
         message_select.insert("Esc".to_string(), Action::ModeNormal);
@@ -173,6 +174,7 @@ impl KeymapManager {
             "delete_message" => Some(Action::DeleteMessage),
             "confirm_delete" => Some(Action::ConfirmDelete),
             "cancel_delete" => Some(Action::CancelDelete),
+            "edit_message" => Some(Action::EditMessage),
             _ => None,
         }
     }
@@ -490,5 +492,17 @@ mod tests {
         let mut km = KeymapManager::default_keymap();
         let result = km.resolve(key(KeyCode::Char('x')), &Mode::Command(String::new()));
         assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_parse_action_edit_message() {
+        assert_eq!(KeymapManager::parse_action("edit_message"), Some(Action::EditMessage));
+    }
+
+    #[test]
+    fn test_resolve_message_select_edit() {
+        let mut km = KeymapManager::default_keymap();
+        let result = km.resolve(key(KeyCode::Char('e')), &Mode::MessageSelect);
+        assert_eq!(result, Some(Action::EditMessage));
     }
 }

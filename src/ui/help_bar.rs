@@ -19,7 +19,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
             if app.confirm_delete {
                 " Delete message? y:yes  n:cancel  \u{26a1}zap"
             } else {
-                " j/k:nav  r:reply  d:delete  i:compose  Esc:back  \u{26a1}zap"
+                " j/k:nav  r:reply  e:edit  d:delete  i:compose  Esc:back  \u{26a1}zap"
             }
         }
         Mode::Command(_) => {
@@ -130,6 +130,19 @@ mod tests {
         assert!(
             content.contains("zap"),
             "Help bar should contain 'zap' branding, got: {}",
+            content
+        );
+    }
+
+    #[test]
+    fn test_help_bar_message_select_shows_edit() {
+        let mut app = App::new();
+        app.mode = Mode::MessageSelect;
+        let buf = render_help_bar(&app, 80);
+        let content = buffer_content(&buf);
+        assert!(
+            content.contains("e:edit"),
+            "MessageSelect help should contain 'e:edit', got: {}",
             content
         );
     }

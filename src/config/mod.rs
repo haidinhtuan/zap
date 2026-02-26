@@ -163,6 +163,7 @@ impl Default for KeymapConfig {
         message_select.insert("Down".to_string(), "message_next".to_string());
         message_select.insert("r".to_string(), "reply_to".to_string());
         message_select.insert("d".to_string(), "delete_message".to_string());
+        message_select.insert("e".to_string(), "edit_message".to_string());
         message_select.insert("i".to_string(), "mode_insert".to_string());
         message_select.insert("q".to_string(), "quit".to_string());
         message_select.insert("Esc".to_string(), "mode_normal".to_string());
