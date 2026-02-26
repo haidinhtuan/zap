@@ -16,31 +16,32 @@ pub struct KeymapManager {
 
 impl KeymapManager {
     /// Build a KeymapManager from a KeymapConfig.
+    ///
+    /// Starts with hardcoded defaults and overlays the user's config on top,
+    /// so new keybindings added in future versions are always available even
+    /// if the user has an older config file.
     pub fn from_config(config: &KeymapConfig) -> Self {
-        let mut normal = HashMap::new();
+        let defaults = Self::default_keymap();
+
+        let mut normal = defaults.normal;
         for (key, action_str) in &config.normal {
             if let Some(action) = Self::parse_action(action_str) {
                 normal.insert(key.clone(), action);
             }
         }
 
-        let mut insert = HashMap::new();
+        let mut insert = defaults.insert;
         for (key, action_str) in &config.insert {
             if let Some(action) = Self::parse_action(action_str) {
                 insert.insert(key.clone(), action);
             }
         }
 
-        let mut message_select = HashMap::new();
+        let mut message_select = defaults.message_select;
         for (key, action_str) in &config.message_select {
             if let Some(action) = Self::parse_action(action_str) {
                 message_select.insert(key.clone(), action);
             }
-        }
-        // Fall back to defaults if config section was empty.
-        if message_select.is_empty() {
-            let default = Self::default_keymap();
-            message_select = default.message_select;
         }
 
         Self {
