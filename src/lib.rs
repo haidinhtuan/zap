@@ -251,15 +251,75 @@ pub async fn run_app(
                                 }
                                 KeyCode::Enter => {
                                     if let Some(contact) = app.contact_results.get(app.selected_contact) {
-                                        let user_id = contact.user_id.clone();
-                                        if let Some(client) = matrix_client {
-                                            if let Some(room_id) = matrix::contacts::find_or_create_dm(client, &user_id).await {
-                                                // Switch to the DM room if it's in our room list.
+                                        let display_name = contact.display_name.clone().unwrap_or_default();
+                                        let search_term = app.contact_search.to_lowercase();
+
+                                        // Try to find a matching room by name.
+                                        // Uses both the contact display name and the search query
+                                        // for matching, and skips dead "Empty Room" entries.
+                                        let name_lower = display_name.to_lowercase();
+
+                                        let is_live_match = |r: &crate::app::Room, query: &str| -> bool {
+                                            let rname = r.name.to_lowercase();
+                                            !rname.starts_with("empty room") && rname.contains(query)
+                                        };
+
+                                        // Try exact display name match on DM rooms first.
+                                        let found = if !name_lower.is_empty() {
+                                            app.rooms.iter().position(|r| {
+                                                r.is_direct
+                                                    && !r.name.to_lowercase().starts_with("empty room")
+                                                    && r.name.to_lowercase() == name_lower
+                                            })
+                                        } else {
+                                            None
+                                        };
+
+                                        // Then try search term substring match on DM rooms.
+                                        let found = found.or_else(|| {
+                                            if !search_term.is_empty() {
+                                                app.rooms.iter().position(|r| {
+                                                    r.is_direct && is_live_match(r, &search_term)
+                                                })
+                                            } else {
+                                                None
+                                            }
+                                        });
+
+                                        if let Some(pos) = found {
+                                            tracing::info!("Contact search: found room by name at position {}", pos);
+                                            app.selected_room = pos;
+                                            app.mode = Mode::Insert;
+                                        } else if let Some(client) = matrix_client {
+                                            let user_id = contact.user_id.clone();
+                                            tracing::info!("Contact search: no name match, trying API for user_id={}", user_id);
+                                            // Fallback 1: search via Matrix API by user_id.
+                                            let room_id = matrix::contacts::find_existing_dm(client, &user_id).await;
+                                            tracing::info!("Contact search: find_existing_dm returned {:?}", room_id);
+                                            // Fallback 2: no existing room, create an unencrypted DM.
+                                            let room_id = match room_id {
+                                                Some(id) => Some(id),
+                                                None => {
+                                                    tracing::info!("Contact search: creating new unencrypted DM");
+                                                    let result = matrix::contacts::create_dm_unencrypted(client, &user_id).await;
+                                                    tracing::info!("Contact search: create_dm result {:?}", result);
+                                                    result
+                                                }
+                                            };
+                                            if let Some(room_id) = room_id {
+                                                // Refresh room list to include the new/found room.
+                                                app.rooms = matrix::sync::get_room_list(client).await;
+                                                tracing::info!("Contact search: refreshed rooms, count={}", app.rooms.len());
                                                 if let Some(pos) = app.rooms.iter().position(|r| r.id == room_id) {
                                                     app.selected_room = pos;
+                                                    app.mode = Mode::Insert;
+                                                    tracing::info!("Contact search: switched to room at position {}", pos);
+                                                } else {
+                                                    tracing::warn!("Contact search: room {} not found in room list", room_id);
                                                 }
-                                                app.mode = Mode::Insert;
                                             }
+                                        } else {
+                                            tracing::warn!("Contact search: no matrix client available");
                                         }
                                     }
                                     app.contact_search.clear();
@@ -407,6 +467,18 @@ pub async fn run_app(
                     }
                     Event::Tick => {
                         // Periodic housekeeping
+                    }
+                    Event::Mouse(mouse) => {
+                        use crossterm::event::{MouseEventKind};
+                        match mouse.kind {
+                            MouseEventKind::ScrollUp => {
+                                app.scroll_offset = app.scroll_offset.saturating_add(3);
+                            }
+                            MouseEventKind::ScrollDown => {
+                                app.scroll_offset = app.scroll_offset.saturating_sub(3);
+                            }
+                            _ => {}
+                        }
                     }
                     _ => {}
                 }

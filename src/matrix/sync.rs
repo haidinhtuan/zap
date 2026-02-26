@@ -179,7 +179,7 @@ async fn auto_join_invites(client: &Client) {
 
 /// Build a list of Room structs from the client's joined rooms, sorted by
 /// most recent activity (newest first).
-async fn get_room_list(client: &Client) -> Vec<Room> {
+pub async fn get_room_list(client: &Client) -> Vec<Room> {
     let mut rooms = Vec::new();
     for room in client.joined_rooms() {
         let name = room
@@ -209,9 +209,12 @@ async fn get_room_list(client: &Client) -> Vec<Room> {
         };
 
         // Use m.direct flag OR member count heuristic (bridges often don't set m.direct).
-        // Rooms with <=3 joined members are likely DMs (self + other + bridge bot).
+        // Bridged DMs may have extra members (multiple bots, service accounts),
+        // so we use a threshold of 5 to catch these cases.
+        let member_count = room.joined_members_count();
         let is_direct = room.is_direct().await.unwrap_or(false)
-            || room.joined_members_count() <= 3;
+            || member_count <= 5;
+        tracing::debug!("Room '{}': members={}, is_direct={}", name, member_count, is_direct);
 
         rooms.push(Room {
             id: room.room_id().to_string(),
