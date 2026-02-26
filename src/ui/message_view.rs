@@ -92,7 +92,8 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
                 .find(|m| m.event_id.as_deref() == Some(reply_eid.as_str()))
                 .map(|m| {
                     let body: String = m.body.chars().take(40).collect();
-                    format!("| {} : {}", m.sender, body)
+                    let name = if m.is_own { "You" } else { &m.sender };
+                    format!("| {} : {}", name, body)
                 })
                 .unwrap_or_else(|| "| reply".to_string());
             lines.push(Line::from(vec![
