@@ -59,6 +59,7 @@ pub fn map_key_to_action(key: KeyEvent, mode: &Mode) -> Action {
             KeyCode::Enter => Action::ModeNormal,
             _ => Action::None,
         },
+        Mode::RoomFilter => Action::None,
     }
 }
 
@@ -182,6 +183,57 @@ pub async fn run_app(
                                     app.textarea.input(key);
                                     continue;
                                 }
+                            }
+                        }
+
+                        // In room filter mode, handle filter input.
+                        if app.mode == Mode::RoomFilter {
+                            match key.code {
+                                KeyCode::Esc => {
+                                    app.room_filter.clear();
+                                    app.mode = Mode::Normal;
+                                    continue;
+                                }
+                                KeyCode::Enter => {
+                                    app.room_filter.clear();
+                                    app.mode = Mode::Normal;
+                                    continue;
+                                }
+                                KeyCode::Backspace => {
+                                    app.room_filter.pop();
+                                    let filtered = app.filtered_room_indices();
+                                    if let Some(&first) = filtered.first() {
+                                        app.selected_room = first;
+                                    }
+                                    continue;
+                                }
+                                KeyCode::Down => {
+                                    let filtered = app.filtered_room_indices();
+                                    if let Some(pos) = filtered.iter().position(|&i| i == app.selected_room) {
+                                        if pos + 1 < filtered.len() {
+                                            app.selected_room = filtered[pos + 1];
+                                        }
+                                    }
+                                    continue;
+                                }
+                                KeyCode::Up => {
+                                    let filtered = app.filtered_room_indices();
+                                    if let Some(pos) = filtered.iter().position(|&i| i == app.selected_room) {
+                                        if pos > 0 {
+                                            app.selected_room = filtered[pos - 1];
+                                        }
+                                    }
+                                    continue;
+                                }
+                                KeyCode::Char(c) => {
+                                    app.room_filter.push(c);
+                                    let filtered = app.filtered_room_indices();
+                                    if let Some(&first) = filtered.first() {
+                                        app.selected_room = first;
+                                    }
+                                    continue;
+                                }
+                                _ => continue,
                             }
                         }
 

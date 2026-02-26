@@ -25,6 +25,9 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         Mode::Command(_) => {
             " [Enter]execute  [Esc]cancel  \u{26a1}zap"
         }
+        Mode::RoomFilter => {
+            " Type to filter  [Enter]select  [Esc]cancel  \u{26a1}zap"
+        }
     };
 
     let bar = Paragraph::new(Line::raw(help_text))
@@ -143,6 +146,19 @@ mod tests {
         assert!(
             content.contains("e:edit"),
             "MessageSelect help should contain 'e:edit', got: {}",
+            content
+        );
+    }
+
+    #[test]
+    fn test_help_bar_room_filter_mode() {
+        let mut app = App::new();
+        app.mode = Mode::RoomFilter;
+        let buf = render_help_bar(&app, 80);
+        let content = buffer_content(&buf);
+        assert!(
+            content.contains("filter"),
+            "RoomFilter help should contain 'filter', got: {}",
             content
         );
     }

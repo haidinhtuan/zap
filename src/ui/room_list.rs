@@ -8,10 +8,9 @@ use crate::app::{App, Mode};
 
 /// Render the room list panel with selection highlight and unread badges.
 pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
-    let border_color = if app.mode == Mode::Normal {
-        Color::Blue
-    } else {
-        Color::DarkGray
+    let border_color = match app.mode {
+        Mode::Normal | Mode::RoomFilter => Color::Blue,
+        _ => Color::DarkGray,
     };
 
     let block = Block::default()
@@ -27,10 +26,12 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
-    let items: Vec<ListItem> = app
-        .rooms
+    let filtered_indices = app.filtered_room_indices();
+
+    let items: Vec<ListItem> = filtered_indices
         .iter()
-        .map(|room| {
+        .map(|&idx| {
+            let room = &app.rooms[idx];
             let mut spans = Vec::new();
 
             if room.unread_count > 0 {
@@ -63,7 +64,8 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         );
 
     let mut state = ListState::default();
-    state.select(Some(app.selected_room));
+    let selected_in_filtered = filtered_indices.iter().position(|&i| i == app.selected_room);
+    state.select(selected_in_filtered);
 
     frame.render_stateful_widget(list, area, &mut state);
 }

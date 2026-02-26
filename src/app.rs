@@ -45,6 +45,7 @@ pub enum Mode {
     Insert,
     MessageSelect,
     Command(String),
+    RoomFilter,
 }
 
 /// Connection status to the Matrix homeserver.
@@ -104,6 +105,8 @@ pub struct App {
     pub confirm_delete: bool,
     /// The logged-in user's Matrix ID (e.g. "@haidinhtuan:localhost").
     pub own_user_id: Option<String>,
+    /// Current room filter string (for RoomFilter mode).
+    pub room_filter: String,
 }
 
 impl App {
@@ -130,6 +133,7 @@ impl App {
             edit_context: None,
             confirm_delete: false,
             own_user_id: None,
+            room_filter: String::new(),
         }
     }
 
@@ -148,6 +152,21 @@ impl App {
         };
     }
 
+    /// Get the list of room indices that match the current filter.
+    pub fn filtered_room_indices(&self) -> Vec<usize> {
+        if self.room_filter.is_empty() {
+            (0..self.rooms.len()).collect()
+        } else {
+            let filter_lower = self.room_filter.to_lowercase();
+            self.rooms
+                .iter()
+                .enumerate()
+                .filter(|(_, r)| r.name.to_lowercase().contains(&filter_lower))
+                .map(|(i, _)| i)
+                .collect()
+        }
+    }
+
     /// Dispatch an action and mutate application state accordingly.
     pub fn handle_action(&mut self, action: Action) {
         match action {
@@ -158,6 +177,7 @@ impl App {
                 self.mode = Mode::Normal;
                 self.selected_message = None;
                 self.edit_context = None;
+                self.room_filter.clear();
             }
             Action::ModeInsert => {
                 if self.mode == Mode::Normal {
@@ -193,7 +213,10 @@ impl App {
                 // Placeholder: will open a room view in the future.
             }
             Action::RoomFilter => {
-                // Placeholder: will open a room filter input in the future.
+                if self.mode == Mode::Normal {
+                    self.room_filter.clear();
+                    self.mode = Mode::RoomFilter;
+                }
             }
             Action::ScrollUp => {
                 self.scroll_offset = self.scroll_offset.saturating_sub(10);
@@ -725,5 +748,73 @@ mod tests {
         app.handle_action(Action::EditMessage);
         assert_eq!(app.mode, Mode::MessageSelect);
         assert!(app.edit_context.is_none());
+    }
+
+    // -- Room filter --
+
+    #[test]
+    fn test_filtered_room_indices_no_filter() {
+        let mut app = App::new();
+        app.rooms = make_rooms(3);
+        let indices = app.filtered_room_indices();
+        assert_eq!(indices, vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn test_filtered_room_indices_with_filter() {
+        let mut app = App::new();
+        app.rooms = vec![
+            Room {
+                id: "!a:x".to_string(),
+                name: "General".to_string(),
+                unread_count: 0,
+                last_activity: None,
+            },
+            Room {
+                id: "!b:x".to_string(),
+                name: "Random".to_string(),
+                unread_count: 0,
+                last_activity: None,
+            },
+            Room {
+                id: "!c:x".to_string(),
+                name: "Dev General".to_string(),
+                unread_count: 0,
+                last_activity: None,
+            },
+        ];
+        app.room_filter = "gen".to_string();
+        let indices = app.filtered_room_indices();
+        assert_eq!(indices, vec![0, 2]); // "General" and "Dev General"
+    }
+
+    #[test]
+    fn test_room_filter_case_insensitive() {
+        let mut app = App::new();
+        app.rooms = vec![
+            Room {
+                id: "!a:x".to_string(),
+                name: "General".to_string(),
+                unread_count: 0,
+                last_activity: None,
+            },
+            Room {
+                id: "!b:x".to_string(),
+                name: "Random".to_string(),
+                unread_count: 0,
+                last_activity: None,
+            },
+        ];
+        app.room_filter = "GENERAL".to_string();
+        let indices = app.filtered_room_indices();
+        assert_eq!(indices, vec![0]);
+    }
+
+    #[test]
+    fn test_room_filter_action_enters_mode() {
+        let mut app = App::new();
+        app.handle_action(Action::RoomFilter);
+        assert_eq!(app.mode, Mode::RoomFilter);
+        assert!(app.room_filter.is_empty());
     }
 }

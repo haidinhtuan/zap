@@ -58,6 +58,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         Mode::Insert => (">>>", Style::default().fg(Color::Green)),
         Mode::MessageSelect => (">", Style::default().fg(Color::Yellow)),
         Mode::Command(_) => (":", Style::default().fg(Color::Yellow)),
+        Mode::RoomFilter => ("/", Style::default().fg(Color::Yellow)),
     };
 
     if app.mode == Mode::Insert {
@@ -81,13 +82,19 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         // Non-insert modes: show static text.
         let display_text = match &app.mode {
             Mode::Command(buf) => buf.clone(),
+            Mode::RoomFilter => app.room_filter.clone(),
             _ => String::new(),
         };
-        let line = Line::from(vec![
+        let mut spans = vec![
             Span::styled(prefix, prefix_style),
             Span::raw(" "),
             Span::raw(display_text),
-        ]);
+        ];
+        // Show cursor in RoomFilter mode.
+        if app.mode == Mode::RoomFilter {
+            spans.push(Span::styled("\u{2588}", Style::default().fg(Color::White)));
+        }
+        let line = Line::from(spans);
         frame.render_widget(Paragraph::new(line), input_area);
     }
 }

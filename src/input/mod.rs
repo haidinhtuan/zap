@@ -103,6 +103,7 @@ impl KeymapManager {
             Mode::Insert => self.resolve_insert(key),
             Mode::MessageSelect => self.resolve_message_select(key),
             Mode::Command(_) => self.resolve_command(key),
+            Mode::RoomFilter => None, // Handled directly in the event loop.
         }
     }
 

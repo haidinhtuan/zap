@@ -13,6 +13,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         Mode::Insert => (" INSERT ", Color::Green),
         Mode::MessageSelect => (" SELECT ", Color::Yellow),
         Mode::Command(_) => (" COMMAND ", Color::Magenta),
+        Mode::RoomFilter => (" FILTER ", Color::Yellow),
     };
 
     let (conn_symbol, conn_text, conn_color) = match &app.connection_status {
