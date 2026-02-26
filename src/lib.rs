@@ -451,13 +451,38 @@ pub async fn run_app(
                             }
 
                             let action = map_key_to_action(key, &app.mode);
+                            let prev_room = app.selected_room;
                             app.handle_action(action);
+                            if app.selected_room != prev_room {
+                                if let Some(client) = matrix_client {
+                                    if let Some(room) = app.rooms.get(app.selected_room) {
+                                        let room_id = room.id.clone();
+                                        send_read_receipt(client, &room_id, &app.messages).await;
+                                    }
+                                }
+                            }
                             continue;
                         }
 
                         // Normal mode: use keymap.
                         if let Some(action) = keymap.resolve(key, &app.mode) {
+                            let prev_room = app.selected_room;
+                            let mark_all = matches!(action, Action::MarkAllRead);
+                            let sends_receipt = matches!(action, Action::MarkRead | Action::MarkAllRead);
                             app.handle_action(action);
+                            // Send read receipt when room selection changes or on explicit mark-read.
+                            if let Some(client) = matrix_client {
+                                if mark_all {
+                                    for room in &app.rooms {
+                                        send_read_receipt(client, &room.id, &app.messages).await;
+                                    }
+                                } else if app.selected_room != prev_room || sends_receipt {
+                                    if let Some(room) = app.rooms.get(app.selected_room) {
+                                        let room_id = room.id.clone();
+                                        send_read_receipt(client, &room_id, &app.messages).await;
+                                    }
+                                }
+                            }
                         }
                     }
                     Event::Render => {
@@ -669,6 +694,34 @@ async fn load_room_messages(app: &mut App, room: &matrix_sdk::Room, room_id: &st
         }
         Err(e) => {
             tracing::warn!("Failed to load messages for room {}: {}", room_id, e);
+        }
+    }
+}
+
+/// Send a read receipt to the Matrix server for the last message in a room.
+///
+/// This tells the server the user has read up to this point, clearing the
+/// unread count server-side so it persists across restarts.
+async fn send_read_receipt(client: &matrix_sdk::Client, room_id: &str, messages: &std::collections::BTreeMap<String, Vec<Message>>) {
+    // Find the last message with an event_id in this room.
+    let last_event_id = messages
+        .get(room_id)
+        .and_then(|msgs| {
+            msgs.iter()
+                .rev()
+                .find_map(|m| m.event_id.as_deref())
+        });
+
+    if let Some(eid) = last_event_id {
+        if let Ok(event_id) = matrix_sdk::ruma::EventId::parse(eid) {
+            if let Ok(rid) = matrix_sdk::ruma::RoomId::parse(room_id) {
+                if let Some(room) = client.get_room(&rid) {
+                    use matrix_sdk::ruma::api::client::receipt::create_receipt::v3::ReceiptType;
+                    if let Err(e) = room.send_single_receipt(ReceiptType::Read, matrix_sdk::ruma::events::receipt::ReceiptThread::Unthreaded, event_id).await {
+                        tracing::warn!("Failed to send read receipt: {}", e);
+                    }
+                }
+            }
         }
     }
 }
