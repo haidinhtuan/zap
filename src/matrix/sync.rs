@@ -208,7 +208,10 @@ async fn get_room_list(client: &Client) -> Vec<Room> {
             })
         };
 
-        let is_direct = room.is_direct().await.unwrap_or(false);
+        // Use m.direct flag OR member count heuristic (bridges often don't set m.direct).
+        // Rooms with <=3 joined members are likely DMs (self + other + bridge bot).
+        let is_direct = room.is_direct().await.unwrap_or(false)
+            || room.joined_members_count() <= 3;
 
         rooms.push(Room {
             id: room.room_id().to_string(),

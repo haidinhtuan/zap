@@ -27,7 +27,8 @@ pub async fn get_room_details(client: &Client, room_id: &str) -> ZapResult<Optio
         .try_into()
         .unwrap_or(0u32);
 
-    let is_direct = room.is_direct().await.unwrap_or(false);
+    let is_direct = room.is_direct().await.unwrap_or(false)
+        || room.joined_members_count() <= 3;
 
     Ok(Some(Room {
         id: room.room_id().to_string(),
