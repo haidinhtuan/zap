@@ -59,6 +59,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         Mode::MessageSelect => (">", Style::default().fg(Color::Yellow)),
         Mode::Command(_) => (":", Style::default().fg(Color::Yellow)),
         Mode::RoomFilter => ("/", Style::default().fg(Color::Yellow)),
+        Mode::ContactSearch => ("@", Style::default().fg(Color::Magenta)),
     };
 
     if app.mode == Mode::Insert {
@@ -83,6 +84,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         let display_text = match &app.mode {
             Mode::Command(buf) => buf.clone(),
             Mode::RoomFilter => app.room_filter.clone(),
+            Mode::ContactSearch => app.contact_search.clone(),
             _ => String::new(),
         };
         let mut spans = vec![
@@ -90,8 +92,8 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
             Span::raw(" "),
             Span::raw(display_text),
         ];
-        // Show cursor in RoomFilter mode.
-        if app.mode == Mode::RoomFilter {
+        // Show cursor in RoomFilter and ContactSearch modes.
+        if matches!(app.mode, Mode::RoomFilter | Mode::ContactSearch) {
             spans.push(Span::styled("\u{2588}", Style::default().fg(Color::White)));
         }
         let line = Line::from(spans);

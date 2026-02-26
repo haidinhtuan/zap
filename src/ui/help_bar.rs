@@ -28,6 +28,9 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         Mode::RoomFilter => {
             " Type to filter  @:DMs  #:groups  [Enter]select  [Esc]cancel  \u{26a1}zap"
         }
+        Mode::ContactSearch => {
+            " Type to search contacts  [Enter]open DM  [Esc]cancel  \u{26a1}zap"
+        }
     };
 
     let bar = Paragraph::new(Line::raw(help_text))

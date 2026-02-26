@@ -14,6 +14,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         Mode::MessageSelect => (" SELECT ", Color::Yellow),
         Mode::Command(_) => (" COMMAND ", Color::Magenta),
         Mode::RoomFilter => (" FILTER ", Color::Yellow),
+        Mode::ContactSearch => (" SEARCH ", Color::Magenta),
     };
 
     let (conn_symbol, conn_text, conn_color) = match &app.connection_status {

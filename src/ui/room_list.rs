@@ -8,6 +8,53 @@ use crate::app::{App, Mode};
 
 /// Render the room list panel with selection highlight and unread badges.
 pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
+    // In ContactSearch mode, replace the room list with search results.
+    if app.mode == Mode::ContactSearch {
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Magenta))
+            .title(" Contacts ");
+
+        if app.contact_results.is_empty() {
+            let hint = if app.contact_search.len() < 2 {
+                "Type to search..."
+            } else {
+                "No results"
+            };
+            let empty = Paragraph::new(hint)
+                .alignment(Alignment::Center)
+                .block(block);
+            frame.render_widget(empty, area);
+            return;
+        }
+
+        let items: Vec<ListItem> = app
+            .contact_results
+            .iter()
+            .map(|user| {
+                let display = user.display_name.as_deref().unwrap_or(&user.user_id);
+                let line = Line::from(vec![
+                    Span::styled("@ ", Style::default().fg(Color::Green)),
+                    Span::styled(display, Style::default().fg(Color::White)),
+                ]);
+                ListItem::new(line)
+            })
+            .collect();
+
+        let list = List::new(items)
+            .block(block)
+            .highlight_style(
+                Style::default()
+                    .bg(Color::DarkGray)
+                    .add_modifier(Modifier::BOLD),
+            );
+
+        let mut state = ListState::default();
+        state.select(Some(app.selected_contact));
+        frame.render_stateful_widget(list, area, &mut state);
+        return;
+    }
+
     let border_color = match app.mode {
         Mode::Normal | Mode::RoomFilter => Color::Blue,
         _ => Color::DarkGray,

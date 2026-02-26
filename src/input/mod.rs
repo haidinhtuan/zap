@@ -62,6 +62,7 @@ impl KeymapManager {
         normal.insert("i".to_string(), Action::ModeInsert);
         normal.insert(":".to_string(), Action::ModeCommand);
         normal.insert("/".to_string(), Action::RoomFilter);
+        normal.insert("n".to_string(), Action::NewMessage);
         normal.insert("Enter".to_string(), Action::EnterMessageSelect);
         normal.insert("r".to_string(), Action::MarkRead);
         normal.insert("R".to_string(), Action::MarkAllRead);
@@ -104,6 +105,7 @@ impl KeymapManager {
             Mode::MessageSelect => self.resolve_message_select(key),
             Mode::Command(_) => self.resolve_command(key),
             Mode::RoomFilter => None, // Handled directly in the event loop.
+            Mode::ContactSearch => None, // Handled directly in the event loop.
         }
     }
 
@@ -176,6 +178,7 @@ impl KeymapManager {
             "confirm_delete" => Some(Action::ConfirmDelete),
             "cancel_delete" => Some(Action::CancelDelete),
             "edit_message" => Some(Action::EditMessage),
+            "new_message" => Some(Action::NewMessage),
             _ => None,
         }
     }

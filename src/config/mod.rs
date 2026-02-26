@@ -146,6 +146,7 @@ impl Default for KeymapConfig {
         normal.insert(":".to_string(), "command_mode".to_string());
         normal.insert("G".to_string(), "room_last".to_string());
         normal.insert("/".to_string(), "room_filter".to_string());
+        normal.insert("n".to_string(), "new_message".to_string());
         normal.insert("Enter".to_string(), "enter_message_select".to_string());
         normal.insert("r".to_string(), "mark_read".to_string());
         normal.insert("R".to_string(), "mark_all_read".to_string());

@@ -31,6 +31,7 @@ pub fn map_key_to_action(key: KeyEvent, mode: &Mode) -> Action {
             KeyCode::Char(':') => Action::ModeCommand,
             KeyCode::Char('G') => Action::RoomLast,
             KeyCode::Char('/') => Action::RoomFilter,
+            KeyCode::Char('n') => Action::NewMessage,
             KeyCode::Char('r') => Action::MarkRead,
             KeyCode::Char('R') => Action::MarkAllRead,
             KeyCode::Enter => Action::EnterMessageSelect,
@@ -60,6 +61,7 @@ pub fn map_key_to_action(key: KeyEvent, mode: &Mode) -> Action {
             _ => Action::None,
         },
         Mode::RoomFilter => Action::None,
+        Mode::ContactSearch => Action::None,
     }
 }
 
@@ -230,6 +232,74 @@ pub async fn run_app(
                                     let filtered = app.filtered_room_indices();
                                     if let Some(&first) = filtered.first() {
                                         app.selected_room = first;
+                                    }
+                                    continue;
+                                }
+                                _ => continue,
+                            }
+                        }
+
+                        // In contact search mode, handle search input.
+                        if app.mode == Mode::ContactSearch {
+                            match key.code {
+                                KeyCode::Esc => {
+                                    app.contact_search.clear();
+                                    app.contact_results.clear();
+                                    app.selected_contact = 0;
+                                    app.mode = Mode::Normal;
+                                    continue;
+                                }
+                                KeyCode::Enter => {
+                                    if let Some(contact) = app.contact_results.get(app.selected_contact) {
+                                        let user_id = contact.user_id.clone();
+                                        if let Some(client) = matrix_client {
+                                            if let Some(room_id) = matrix::contacts::find_or_create_dm(client, &user_id).await {
+                                                // Switch to the DM room if it's in our room list.
+                                                if let Some(pos) = app.rooms.iter().position(|r| r.id == room_id) {
+                                                    app.selected_room = pos;
+                                                }
+                                                app.mode = Mode::Insert;
+                                            }
+                                        }
+                                    }
+                                    app.contact_search.clear();
+                                    app.contact_results.clear();
+                                    app.selected_contact = 0;
+                                    if app.mode == Mode::ContactSearch {
+                                        app.mode = Mode::Normal;
+                                    }
+                                    continue;
+                                }
+                                KeyCode::Backspace => {
+                                    app.contact_search.pop();
+                                    if app.contact_search.len() >= 2 {
+                                        if let Some(client) = matrix_client {
+                                            app.contact_results = matrix::contacts::search_users(client, &app.contact_search).await;
+                                            app.selected_contact = 0;
+                                        }
+                                    } else {
+                                        app.contact_results.clear();
+                                        app.selected_contact = 0;
+                                    }
+                                    continue;
+                                }
+                                KeyCode::Down => {
+                                    if !app.contact_results.is_empty() {
+                                        app.selected_contact = (app.selected_contact + 1).min(app.contact_results.len() - 1);
+                                    }
+                                    continue;
+                                }
+                                KeyCode::Up => {
+                                    app.selected_contact = app.selected_contact.saturating_sub(1);
+                                    continue;
+                                }
+                                KeyCode::Char(c) => {
+                                    app.contact_search.push(c);
+                                    if app.contact_search.len() >= 2 {
+                                        if let Some(client) = matrix_client {
+                                            app.contact_results = matrix::contacts::search_users(client, &app.contact_search).await;
+                                            app.selected_contact = 0;
+                                        }
                                     }
                                     continue;
                                 }

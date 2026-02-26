@@ -39,6 +39,13 @@ pub struct EditContext {
     pub room_id: String,
 }
 
+/// A user from the Matrix user directory search.
+#[derive(Debug, Clone)]
+pub struct UserSearchResult {
+    pub user_id: String,
+    pub display_name: Option<String>,
+}
+
 /// The current input mode of the application.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Mode {
@@ -47,6 +54,7 @@ pub enum Mode {
     MessageSelect,
     Command(String),
     RoomFilter,
+    ContactSearch,
 }
 
 /// Connection status to the Matrix homeserver.
@@ -84,6 +92,7 @@ pub enum Action {
     MarkRead,
     MarkAllRead,
     EditMessage,
+    NewMessage,
     None,
 }
 
@@ -108,6 +117,12 @@ pub struct App {
     pub own_user_id: Option<String>,
     /// Current room filter string (for RoomFilter mode).
     pub room_filter: String,
+    /// Current contact search string (for ContactSearch mode).
+    pub contact_search: String,
+    /// Results from the Matrix user directory search.
+    pub contact_results: Vec<UserSearchResult>,
+    /// Currently selected index in the contact search results.
+    pub selected_contact: usize,
 }
 
 impl App {
@@ -135,6 +150,9 @@ impl App {
             confirm_delete: false,
             own_user_id: None,
             room_filter: String::new(),
+            contact_search: String::new(),
+            contact_results: Vec::new(),
+            selected_contact: 0,
         }
     }
 
@@ -194,6 +212,9 @@ impl App {
                 self.selected_message = None;
                 self.edit_context = None;
                 self.room_filter.clear();
+                self.contact_search.clear();
+                self.contact_results.clear();
+                self.selected_contact = 0;
             }
             Action::ModeInsert => {
                 if self.mode == Mode::Normal {
@@ -344,6 +365,14 @@ impl App {
                             self.mode = Mode::Insert;
                         }
                     }
+                }
+            }
+            Action::NewMessage => {
+                if self.mode == Mode::Normal {
+                    self.contact_search.clear();
+                    self.contact_results.clear();
+                    self.selected_contact = 0;
+                    self.mode = Mode::ContactSearch;
                 }
             }
             Action::None => {}
