@@ -129,7 +129,8 @@ async fn main() -> color_eyre::Result<()> {
         Duration::from_millis(16),  // ~60 fps render rate
     );
 
-    // Initialize terminal.
+    // Initialize terminal with mouse support.
+    crossterm::execute!(std::io::stdout(), crossterm::event::EnableMouseCapture).ok();
     let mut terminal = ratatui::init();
 
     // Run the main event loop.
@@ -144,6 +145,7 @@ async fn main() -> color_eyre::Result<()> {
     .await;
 
     // Restore terminal.
+    crossterm::execute!(std::io::stdout(), crossterm::event::DisableMouseCapture).ok();
     ratatui::restore();
 
     tracing::info!("zap exiting");

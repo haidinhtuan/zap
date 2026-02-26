@@ -56,7 +56,14 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
 
     let messages = messages.unwrap();
 
-    // Build lines for each message.
+    // Fixed prefix width: marker(2) + timestamp(5) + space(1) = 8 chars.
+    // Continuation lines are indented to this width so they don't overlap the timestamp column.
+    let prefix_width = 8;
+    let inner_width = area.width.saturating_sub(2) as usize; // subtract borders
+    let inner_height = area.height.saturating_sub(2) as usize;
+    let body_width = inner_width.saturating_sub(prefix_width);
+
+    // Build lines for each message, manually wrapping long bodies.
     let mut lines: Vec<Line> = Vec::new();
     for (i, msg) in messages.iter().enumerate() {
         let timestamp = msg.timestamp.format("%H:%M").to_string();
@@ -87,7 +94,6 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         // Show reply indicator if this message is a reply.
         if let Some(ref reply_eid) = msg.reply_to {
             let prefix = if is_selected { ">>" } else { "  " };
-            // Look up the replied-to message by event_id.
             let reply_text = messages.iter()
                 .find(|m| m.event_id.as_deref() == Some(reply_eid.as_str()))
                 .map(|m| {
@@ -115,23 +121,50 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
             ("  ", Style::default())
         };
         let display_name = if msg.is_own { "You".to_string() } else { msg.sender.clone() };
-        lines.push(Line::from(vec![
-            Span::styled(
-                marker,
-                marker_style,
-            ),
-            Span::styled(timestamp, timestamp_style),
-            Span::raw(" "),
-            Span::styled(display_name, sender_style),
-            Span::raw(": "),
-            Span::styled(msg.body.clone(), body_style),
-        ]));
+
+        // Build the full body text: "SenderName: message body"
+        let full_body = format!("{}: {}", display_name, msg.body);
+
+        if body_width == 0 || full_body.len() <= body_width {
+            // Fits on one line.
+            lines.push(Line::from(vec![
+                Span::styled(marker, marker_style),
+                Span::styled(timestamp, timestamp_style),
+                Span::raw(" "),
+                Span::styled(display_name, sender_style),
+                Span::raw(": "),
+                Span::styled(msg.body.clone(), body_style),
+            ]));
+        } else {
+            // First line: marker + timestamp + start of body.
+            let first_chunk: String = full_body.chars().take(body_width).collect();
+            lines.push(Line::from(vec![
+                Span::styled(marker, marker_style),
+                Span::styled(timestamp, timestamp_style),
+                Span::raw(" "),
+                Span::styled(first_chunk, if msg.is_own { sender_style } else { body_style }),
+            ]));
+
+            // Continuation lines: indented past the timestamp column.
+            let indent = " ".repeat(prefix_width);
+            let remaining: String = full_body.chars().skip(body_width).collect();
+            let mut rest = remaining.as_str();
+            while !rest.is_empty() {
+                let chunk_len = rest.chars().take(body_width).count();
+                let chunk: String = rest.chars().take(chunk_len).collect();
+                rest = &rest[chunk.len()..];
+                lines.push(Line::from(vec![
+                    Span::raw(indent.clone()),
+                    Span::styled(chunk, body_style),
+                ]));
+            }
+        }
     }
 
-    // Scroll so the newest messages (bottom) are visible.
-    // Inner height = area height - 2 (for borders).
-    let inner_height = area.height.saturating_sub(2) as usize;
-    let scroll_offset = lines.len().saturating_sub(inner_height);
+    // Scroll so the newest messages (bottom) are visible, then apply user scroll offset.
+    let total_lines = lines.len();
+    let auto_scroll = total_lines.saturating_sub(inner_height);
+    let scroll_offset = auto_scroll.saturating_sub(app.scroll_offset);
 
     let paragraph = Paragraph::new(lines)
         .block(block)

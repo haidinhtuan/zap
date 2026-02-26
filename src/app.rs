@@ -229,21 +229,25 @@ impl App {
             Action::RoomNext => {
                 if self.mode == Mode::Normal && !self.rooms.is_empty() {
                     self.selected_room = (self.selected_room + 1).min(self.rooms.len() - 1);
+                    self.scroll_offset = 0;
                 }
             }
             Action::RoomPrev => {
                 if self.mode == Mode::Normal {
                     self.selected_room = self.selected_room.saturating_sub(1);
+                    self.scroll_offset = 0;
                 }
             }
             Action::RoomFirst => {
                 if self.mode == Mode::Normal && !self.rooms.is_empty() {
                     self.selected_room = 0;
+                    self.scroll_offset = 0;
                 }
             }
             Action::RoomLast => {
                 if self.mode == Mode::Normal && !self.rooms.is_empty() {
                     self.selected_room = self.rooms.len() - 1;
+                    self.scroll_offset = 0;
                 }
             }
             Action::OpenRoom => {
@@ -256,10 +260,10 @@ impl App {
                 }
             }
             Action::ScrollUp => {
-                self.scroll_offset = self.scroll_offset.saturating_sub(10);
+                self.scroll_offset = self.scroll_offset.saturating_add(5);
             }
             Action::ScrollDown => {
-                self.scroll_offset = self.scroll_offset.saturating_add(10);
+                self.scroll_offset = self.scroll_offset.saturating_sub(5);
             }
             Action::SendMessage => {
                 // Placeholder: will send the message in the future.
@@ -527,25 +531,25 @@ mod tests {
     // -- Scroll --
 
     #[test]
-    fn test_scroll_down() {
+    fn test_scroll_up_increases_offset() {
         let mut app = App::new();
-        app.handle_action(Action::ScrollDown);
-        assert_eq!(app.scroll_offset, 10);
-    }
-
-    #[test]
-    fn test_scroll_up() {
-        let mut app = App::new();
-        app.scroll_offset = 15;
         app.handle_action(Action::ScrollUp);
         assert_eq!(app.scroll_offset, 5);
     }
 
     #[test]
-    fn test_scroll_up_saturating() {
+    fn test_scroll_down_decreases_offset() {
+        let mut app = App::new();
+        app.scroll_offset = 15;
+        app.handle_action(Action::ScrollDown);
+        assert_eq!(app.scroll_offset, 10);
+    }
+
+    #[test]
+    fn test_scroll_down_saturating() {
         let mut app = App::new();
         app.scroll_offset = 3;
-        app.handle_action(Action::ScrollUp);
+        app.handle_action(Action::ScrollDown);
         assert_eq!(app.scroll_offset, 0);
     }
 
