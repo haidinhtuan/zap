@@ -115,8 +115,9 @@ async fn main() -> color_eyre::Result<()> {
     // Set up app state and event handler.
     let mut app = App::new();
 
-    // Apply theme colors to app (store for UI to use).
+    // Apply config to app state.
     app.theme = Some(theme_config);
+    app.room_list_width = app_config.ui.room_list_width;
 
     // Store own user ID for is_own detection.
     if let Some(ref client) = matrix_client {

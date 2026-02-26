@@ -18,7 +18,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
     .areas(frame.area());
 
     let [room_area, chat_area] = Layout::horizontal([
-        Constraint::Length(22), // room list width + borders
+        Constraint::Length(app.room_list_width + 2), // + borders
         Constraint::Fill(1),
     ])
     .areas(body_area);
