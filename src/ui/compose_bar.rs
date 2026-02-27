@@ -55,7 +55,13 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
     // Render input line.
     let (prefix, prefix_style) = match &app.mode {
         Mode::Normal => (">", Style::default().fg(Color::DarkGray)),
-        Mode::Insert => (">>>", Style::default().fg(Color::Green)),
+        Mode::Insert => {
+            if app.vigo_enabled {
+                (">VI>", Style::default().fg(Color::Green))
+            } else {
+                (">EN>", Style::default().fg(Color::Green))
+            }
+        }
         Mode::MessageSelect => (">", Style::default().fg(Color::Yellow)),
         Mode::Command(_) => (":", Style::default().fg(Color::Yellow)),
         Mode::RoomFilter => ("/", Style::default().fg(Color::Yellow)),
@@ -156,8 +162,8 @@ mod tests {
         let buf = render_compose_bar(&app, 40, 3);
         let content = buffer_content(&buf);
         assert!(
-            content.contains(">>>"),
-            "Insert mode should show '>>>' prefix, got:\n{}",
+            content.contains(">EN>"),
+            "Insert mode should show '>EN>' prefix, got:\n{}",
             content
         );
     }

@@ -33,6 +33,7 @@ url = "2"
 linkify = "0.10"
 rpassword = "7"
 open = "5"
+vigo = { path = "../vigo", default-features = false, features = ["std"] }
 
 [dev-dependencies]
 tempfile = "3"

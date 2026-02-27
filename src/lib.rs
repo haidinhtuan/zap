@@ -79,6 +79,8 @@ pub async fn run_app(
 ) -> color_eyre::Result<()> {
     // Track which rooms we've already loaded history for.
     let mut history_loaded: std::collections::HashSet<String> = std::collections::HashSet::new();
+    // Track which room we last sent a read receipt for.
+    let mut last_receipt_room: Option<String> = None;
 
     loop {
         // If we have a selected room and haven't loaded its history yet, do so.
@@ -94,6 +96,12 @@ pub async fn run_app(
                         }
                     }
                 }
+                // Send read receipt when we switch to a different room.
+                if last_receipt_room.as_deref() != Some(&room_id) {
+                    last_receipt_room = Some(room_id.clone());
+                    app.rooms[app.selected_room].unread_count = 0;
+                    send_read_receipt(client, &room_id, &app.messages).await;
+                }
             }
         }
 
@@ -105,12 +113,14 @@ pub async fn run_app(
                         if app.mode == Mode::Insert {
                             match key.code {
                                 KeyCode::Char('x') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                    app.vigo_commit();
                                     app.reply_context = None;
                                     app.edit_context = None;
                                     app.textarea_clear();
                                     continue;
                                 }
                                 KeyCode::Enter if !key.modifiers.contains(KeyModifiers::SHIFT) => {
+                                    app.vigo_commit();
                                     // Send message or edit.
                                     let msg_text = app.textarea_text();
                                     if !msg_text.is_empty() {
@@ -173,6 +183,7 @@ pub async fn run_app(
                                     continue;
                                 }
                                 KeyCode::Esc => {
+                                    app.vigo_commit();
                                     app.mode = Mode::Normal;
                                     app.reply_context = None;
                                     app.edit_context = None;
@@ -180,9 +191,44 @@ pub async fn run_app(
                                     app.textarea_clear();
                                     continue;
                                 }
+                                KeyCode::Char('t') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                    app.vigo_enabled = !app.vigo_enabled;
+                                    app.vigo_commit();
+                                    continue;
+                                }
                                 _ => {
-                                    // Forward all other keys to TextArea for cursor/selection/clipboard.
-                                    app.textarea.input(key);
+                                    if app.vigo_enabled {
+                                        match key.code {
+                                            KeyCode::Char(c) if c.is_ascii_alphanumeric() => {
+                                                for _ in 0..app.vigo_comp_len {
+                                                    app.textarea.delete_char();
+                                                }
+                                                app.vigo_engine.feed(c);
+                                                let output = app.vigo_engine.output().to_string();
+                                                app.textarea.insert_str(&output);
+                                                app.vigo_comp_len = output.chars().count();
+                                            }
+                                            KeyCode::Backspace => {
+                                                if app.vigo_comp_len > 0 {
+                                                    for _ in 0..app.vigo_comp_len {
+                                                        app.textarea.delete_char();
+                                                    }
+                                                    app.vigo_engine.backspace();
+                                                    let output = app.vigo_engine.output().to_string();
+                                                    app.textarea.insert_str(&output);
+                                                    app.vigo_comp_len = output.chars().count();
+                                                } else {
+                                                    app.textarea.input(key);
+                                                }
+                                            }
+                                            _ => {
+                                                app.vigo_commit();
+                                                app.textarea.input(key);
+                                            }
+                                        }
+                                    } else {
+                                        app.textarea.input(key);
+                                    }
                                     continue;
                                 }
                             }

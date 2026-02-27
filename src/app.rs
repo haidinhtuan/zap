@@ -123,6 +123,12 @@ pub struct App {
     pub contact_results: Vec<UserSearchResult>,
     /// Currently selected index in the contact search results.
     pub selected_contact: usize,
+    /// Whether Vietnamese input mode (Telex) is enabled.
+    pub vigo_enabled: bool,
+    /// Vigo FastEngine for Vietnamese input.
+    pub vigo_engine: vigo::FastEngine,
+    /// Number of chars of current Vigo composition in the textarea.
+    pub vigo_comp_len: usize,
 }
 
 impl App {
@@ -153,6 +159,9 @@ impl App {
             contact_search: String::new(),
             contact_results: Vec::new(),
             selected_contact: 0,
+            vigo_enabled: false,
+            vigo_engine: vigo::FastEngine::telex(),
+            vigo_comp_len: 0,
         }
     }
 
@@ -169,6 +178,14 @@ impl App {
             ta.set_block(ratatui::widgets::Block::default());
             ta
         };
+        self.vigo_engine.clear();
+        self.vigo_comp_len = 0;
+    }
+
+    /// Commit current Vigo composition and reset engine state.
+    pub fn vigo_commit(&mut self) {
+        self.vigo_engine.clear();
+        self.vigo_comp_len = 0;
     }
 
     /// Get the list of room indices that match the current filter.
