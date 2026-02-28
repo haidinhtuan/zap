@@ -17,7 +17,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
     // If there's a reply or edit context, split area into context preview + input.
     let has_context = app.reply_context.is_some() || app.edit_context.is_some();
     let (context_area, input_area) = if has_context {
-        let chunks = Layout::vertical([Constraint::Length(1), Constraint::Length(1)])
+        let chunks = Layout::vertical([Constraint::Length(1), Constraint::Fill(1)])
             .split(block.inner(area));
         (Some(chunks[0]), chunks[1])
     } else {
@@ -161,9 +161,10 @@ mod tests {
         app.mode = Mode::Insert;
         let buf = render_compose_bar(&app, 40, 3);
         let content = buffer_content(&buf);
+        // Vigo (Vietnamese input) is enabled by default
         assert!(
-            content.contains(">EN>"),
-            "Insert mode should show '>EN>' prefix, got:\n{}",
+            content.contains(">VI>"),
+            "Insert mode should show '>VI>' prefix (Vigo enabled by default), got:\n{}",
             content
         );
     }
