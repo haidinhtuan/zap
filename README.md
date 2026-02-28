@@ -71,6 +71,7 @@ The idea is simple: a local Matrix homeserver handles the protocol, bridges hand
 
 *   **Two-Panel TUI** - Room list + message view, compact and keyboard-driven
 *   **Vim-Style Navigation** - `j`/`k` for rooms, `Enter` for message select mode, `i` for compose
+*   **Vietnamese Input** - Built-in Telex input via [Vigo](https://github.com/haidinhtuan/vigo), toggle with `Ctrl+t`
 *   **Reply to Messages** - Select a message with `r`, compose your reply with full context
 *   **Delete Messages** - Press `d` on a message, confirm with `y` (Matrix redact API)
 *   **Room Sorting** - Rooms sorted by most recent activity, unread indicators
@@ -90,6 +91,7 @@ The idea is simple: a local Matrix homeserver handles the protocol, bridges hand
 *   [![Ratatui][ratatui-shield]][ratatui-url] - Terminal UI framework
 *   [![Matrix][matrix-shield]][matrix-url] - matrix-rust-sdk for protocol
 *   [![Tokio][tokio-shield]][tokio-url] - Async runtime
+*   [![Vigo][vigo-shield]][vigo-url] - Vietnamese input engine
 
 **Infrastructure:**
 *   [![Conduit][conduit-shield]][conduit-url] - Lightweight Matrix homeserver
@@ -206,7 +208,8 @@ All keybindings are configurable via `keymap.toml`.
 | | `d` | Delete selected message |
 | | `Esc` | Back to normal mode |
 | **Insert** | `Enter` | Send message |
-| | `Ctrl+x` | Cancel reply |
+| | `Ctrl+t` | Toggle Vietnamese input (Telex) |
+| | `Ctrl+x` | Cancel compose |
 | | `Esc` | Back to normal mode |
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -277,3 +280,5 @@ Project Link: [https://github.com/haidinhtuan/zap](https://github.com/haidinhtua
 [conduit-url]: https://conduit.rs/
 [mautrix-shield]: https://img.shields.io/badge/mautrix-Meta_Bridge-0084FF?style=for-the-badge&logo=messenger&logoColor=white
 [mautrix-url]: https://github.com/mautrix/meta
+[vigo-shield]: https://img.shields.io/badge/Vigo-Vietnamese_Input-DEA584?style=for-the-badge&logo=rust&logoColor=white
+[vigo-url]: https://github.com/haidinhtuan/vigo
