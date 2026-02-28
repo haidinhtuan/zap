@@ -6,54 +6,84 @@ use ratatui::Frame;
 
 use crate::app::{App, ConnectionStatus, Mode};
 
-/// Render the top status bar with nvim-style colored mode badge.
+// Vibrant pastel palette (matching starship/tmux theme)
+const BASE: Color = Color::Rgb(30, 30, 46);        // #1e1e2e
+const MANTLE: Color = Color::Rgb(24, 24, 37);      // #181825
+const GREEN: Color = Color::Rgb(189, 240, 185);    // #bdf0b9
+const PEACH: Color = Color::Rgb(255, 198, 161);    // #ffc6a1
+const YELLOW: Color = Color::Rgb(255, 240, 194);   // #fff0c2
+const MAUVE: Color = Color::Rgb(164, 197, 255);    // #a4c5ff
+const TEAL: Color = Color::Rgb(168, 240, 229);     // #a8f0e5
+const BLUE: Color = Color::Rgb(164, 197, 255);     // #a4c5ff
+
+// Powerline characters
+const ROUND_RIGHT: &str = "\u{e0b4}"; // pill close
+const ROUND_LEFT: &str = "\u{e0b6}";  // pill open
+
+/// Render the top status bar with powerline-style mode badge.
 pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
-    let (mode_str, mode_bg) = match &app.mode {
-        Mode::Normal => (" NORMAL ", Color::Blue),
-        Mode::Insert => (" INSERT ", Color::Green),
-        Mode::MessageSelect => (" SELECT ", Color::Yellow),
-        Mode::Command(_) => (" COMMAND ", Color::Magenta),
-        Mode::RoomFilter => (" FILTER ", Color::Yellow),
-        Mode::ContactSearch => (" SEARCH ", Color::Magenta),
+    let (mode_str, mode_color) = match &app.mode {
+        Mode::Normal => (" NORMAL ", GREEN),
+        Mode::Insert => (" COMPOSE ", PEACH),
+        Mode::MessageSelect => (" SELECT ", YELLOW),
+        Mode::Command(_) => (" COMMAND ", MAUVE),
+        Mode::RoomFilter => (" FILTER ", TEAL),
+        Mode::ContactSearch => (" SEARCH ", BLUE),
     };
 
-    let (conn_symbol, conn_text, conn_color) = match &app.connection_status {
-        ConnectionStatus::Connected => ("\u{25c6}", "Connected", Color::Green),
-        ConnectionStatus::Connecting => ("\u{25c7}", "Connecting", Color::Yellow),
-        ConnectionStatus::Disconnected => ("\u{25c7}", "Disconnected", Color::Red),
+    let conn_text = match &app.connection_status {
+        ConnectionStatus::Connected => "Connected",
+        ConnectionStatus::Connecting => "Connecting",
+        ConnectionStatus::Disconnected => "Disconnected",
     };
 
-    // Nvim-style: colored block for mode, then app name.
-    let mode_badge = Span::styled(
-        mode_str,
-        Style::default().fg(Color::Black).bg(mode_bg).add_modifier(Modifier::BOLD),
-    );
+    // Left side: [MODE](pill close)
+    let left_spans = vec![
+        // Mode pill
+        Span::styled(
+            mode_str,
+            Style::default().fg(BASE).bg(mode_color).add_modifier(Modifier::BOLD),
+        ),
+        // Pill close
+        Span::styled(
+            ROUND_RIGHT,
+            Style::default().fg(mode_color).bg(MANTLE),
+        ),
+    ];
 
-    let app_name = Span::styled(
-        " \u{26a1} Zap ",
-        Style::default().fg(Color::Cyan),
-    );
+    // Right side: (pill open)[connection status]
+    let conn_text_full = format!(" {} ", conn_text);
+    let right_spans = vec![
+        // Pill open for connection
+        Span::styled(
+            ROUND_LEFT,
+            Style::default().fg(MAUVE).bg(MANTLE),
+        ),
+        // Connection status
+        Span::styled(
+            conn_text_full.clone(),
+            Style::default().fg(BASE).bg(MAUVE).add_modifier(Modifier::BOLD),
+        ),
+    ];
 
-    let right_text = format!(" {} {} ", conn_symbol, conn_text);
-    let right = Span::styled(right_text, Style::default().fg(conn_color));
-
-    // Calculate padding.
-    let left_len = mode_str.len() + 6; // mode badge + " ⚡ Zap "
-    let right_len = right.content.len();
+    // Calculate padding
+    let left_len: usize = mode_str.len() + 1; // mode + pill close
+    let right_len: usize = 1 + conn_text_full.len(); // pill open + text
     let padding = if area.width as usize > left_len + right_len {
         area.width as usize - left_len - right_len
     } else {
         1
     };
 
-    let line = Line::from(vec![
-        mode_badge,
-        app_name,
-        Span::raw(" ".repeat(padding)),
-        right,
-    ]);
+    let mut spans = left_spans;
+    spans.push(Span::styled(
+        " ".repeat(padding),
+        Style::default().bg(MANTLE),
+    ));
+    spans.extend(right_spans);
 
-    let bar = Paragraph::new(line).style(Style::default().bg(Color::Rgb(24, 24, 37)));
+    let line = Line::from(spans);
+    let bar = Paragraph::new(line).style(Style::default().bg(MANTLE));
 
     frame.render_widget(bar, area);
 }
@@ -83,16 +113,6 @@ mod tests {
     }
 
     #[test]
-    fn test_status_bar_contains_zap() {
-        let app = App::new();
-        let buf = render_status_bar(&app, 80);
-        let content: String = (0..buf.area.width)
-            .map(|x| buf.cell((x, 0)).unwrap().symbol().to_string())
-            .collect();
-        assert!(content.contains("Zap"), "Status bar should contain 'Zap', got: {}", content);
-    }
-
-    #[test]
     fn test_status_bar_shows_normal_mode() {
         let app = App::new();
         let buf = render_status_bar(&app, 80);
@@ -110,7 +130,7 @@ mod tests {
         let content: String = (0..buf.area.width)
             .map(|x| buf.cell((x, 0)).unwrap().symbol().to_string())
             .collect();
-        assert!(content.contains("INSERT"), "Status bar should contain 'INSERT', got: {}", content);
+        assert!(content.contains("COMPOSE"), "Status bar should contain 'COMPOSE', got: {}", content);
     }
 
     #[test]
