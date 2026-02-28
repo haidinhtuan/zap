@@ -24,7 +24,14 @@ pub fn draw(frame: &mut Frame, app: &App) {
     .areas(body_area);
 
     // Split chat_area into message view and compose bar.
-    let compose_height = if app.reply_context.is_some() || app.edit_context.is_some() { 4 } else { 3 };
+    // Compose height grows with textarea content (up to 6 lines total).
+    let textarea_lines = if app.mode == crate::app::Mode::Insert {
+        app.textarea.lines().len().max(1)
+    } else {
+        1
+    };
+    let context_extra = if app.reply_context.is_some() || app.edit_context.is_some() { 1 } else { 0 };
+    let compose_height = ((textarea_lines as u16) + 2 + context_extra).min(6);
     let [message_area, compose_area] = Layout::vertical([
         Constraint::Fill(1),
         Constraint::Length(compose_height),

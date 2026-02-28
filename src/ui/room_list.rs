@@ -63,7 +63,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(border_color))
-        .title(" Rooms ");
+        .title(" Contacts ");
 
     if app.rooms.is_empty() {
         let empty = Paragraph::new("No rooms")
@@ -74,6 +74,10 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
     }
 
     let filtered_indices = app.filtered_room_indices();
+
+    let inner_w = area.width.saturating_sub(2) as usize;
+    let prefix_cols = 3; // 1 (unread indicator) + 2 (type indicator)
+    let name_budget = inner_w.saturating_sub(prefix_cols);
 
     let items: Vec<ListItem> = filtered_indices
         .iter()
@@ -96,13 +100,34 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
             let type_color = if room.is_direct { Color::Green } else { Color::DarkGray };
             spans.push(Span::styled(type_indicator, Style::default().fg(type_color)));
 
-            // Room name.
+            // Room name with optional unread count, truncated to fit.
+            let count_suffix = if room.unread_count > 0 {
+                format!(" {}", room.unread_count)
+            } else {
+                String::new()
+            };
+            let max_name_len = name_budget.saturating_sub(count_suffix.len());
+
             let name_style = if room.unread_count > 0 {
                 Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::Gray)
             };
-            spans.push(Span::styled(&room.name, name_style));
+
+            if room.name.chars().count() > max_name_len {
+                let truncated: String =
+                    room.name.chars().take(max_name_len.saturating_sub(1)).collect();
+                spans.push(Span::styled(format!("{}…", truncated), name_style));
+            } else {
+                spans.push(Span::styled(room.name.as_str(), name_style));
+            }
+
+            if room.unread_count > 0 {
+                spans.push(Span::styled(
+                    count_suffix,
+                    Style::default().fg(Color::Red),
+                ));
+            }
 
             ListItem::new(Line::from(spans))
         })
@@ -210,7 +235,7 @@ mod tests {
         app.rooms = make_rooms();
         let buf = render_room_list(&app, 22, 10);
         let content = buffer_content(&buf);
-        assert!(content.contains("Rooms"), "Should show title 'Rooms', got:\n{}", content);
+        assert!(content.contains("Contacts"), "Should show title 'Contacts', got:\n{}", content);
     }
 
     #[test]

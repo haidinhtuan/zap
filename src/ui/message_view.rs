@@ -6,6 +6,53 @@ use ratatui::Frame;
 
 use crate::app::{App, Mode};
 
+fn date_label(date: chrono::NaiveDate) -> String {
+    use chrono::Datelike;
+    let today = chrono::Local::now().date_naive();
+    let yesterday = today - chrono::Duration::days(1);
+    if date == today {
+        "Today".to_string()
+    } else if date == yesterday {
+        "Yesterday".to_string()
+    } else if date.year() == today.year() {
+        date.format("%b %-d").to_string()
+    } else {
+        date.format("%b %-d, %Y").to_string()
+    }
+}
+
+fn word_wrap(text: &str, max_width: usize) -> Vec<String> {
+    if max_width == 0 || text.is_empty() {
+        return vec![text.to_string()];
+    }
+    let mut lines: Vec<String> = Vec::new();
+    let mut remaining = text;
+    while !remaining.is_empty() {
+        if remaining.chars().count() <= max_width {
+            lines.push(remaining.to_string());
+            break;
+        }
+        let boundary = remaining
+            .char_indices()
+            .nth(max_width)
+            .map(|(i, _)| i)
+            .unwrap_or(remaining.len());
+        let chunk = &remaining[..boundary];
+        // If the char right at the boundary is a space, break cleanly there.
+        if remaining[boundary..].starts_with(' ') {
+            lines.push(chunk.to_string());
+            remaining = &remaining[boundary + 1..];
+        } else if let Some(last_space) = chunk.rfind(' ') {
+            lines.push(remaining[..last_space].to_string());
+            remaining = &remaining[last_space + 1..];
+        } else {
+            lines.push(chunk.to_string());
+            remaining = &remaining[boundary..];
+        }
+    }
+    lines
+}
+
 /// Render the message view area showing the room header and message list.
 pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
     let border_color = match app.mode {
@@ -65,7 +112,41 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
 
     // Build lines for each message, manually wrapping long bodies.
     let mut lines: Vec<Line> = Vec::new();
+    let mut prev_date: Option<chrono::NaiveDate> = None;
     for (i, msg) in messages.iter().enumerate() {
+        // Date separator between messages from different calendar days.
+        let msg_date = msg.timestamp.with_timezone(&chrono::Local).date_naive();
+        if prev_date != Some(msg_date) {
+            let label = format!(" {} ", date_label(msg_date));
+            let dashes_total = inner_width.saturating_sub(label.len());
+            let left = dashes_total / 2;
+            let right = dashes_total - left;
+            let sep = format!("{}{}{}", "─".repeat(left), label, "─".repeat(right));
+            lines.push(Line::from(Span::styled(
+                sep,
+                Style::default().fg(Color::DarkGray),
+            )));
+            prev_date = Some(msg_date);
+        }
+
+        // Render "new" separator between last-read and first-unread message.
+        if let Some(&read_idx) = app.last_read_index.get(&room.id) {
+            if i == read_idx && read_idx < messages.len() {
+                let label = " new ";
+                let dashes = inner_width.saturating_sub(label.len()) / 2;
+                let sep = format!(
+                    "{}{}{}",
+                    "\u{2500}".repeat(dashes),
+                    label,
+                    "\u{2500}".repeat(inner_width.saturating_sub(dashes + label.len()))
+                );
+                lines.push(Line::from(Span::styled(
+                    sep,
+                    Style::default().fg(Color::Yellow),
+                )));
+            }
+        }
+
         let timestamp = msg.timestamp.format("%H:%M").to_string();
 
         let is_selected = app.mode == Mode::MessageSelect && app.selected_message == Some(i);
@@ -125,7 +206,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         // Build the full body text: "SenderName: message body"
         let full_body = format!("{}: {}", display_name, msg.body);
 
-        if body_width == 0 || full_body.len() <= body_width {
+        if body_width == 0 || full_body.chars().count() <= body_width {
             // Fits on one line.
             lines.push(Line::from(vec![
                 Span::styled(marker, marker_style),
@@ -136,27 +217,25 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
                 Span::styled(msg.body.clone(), body_style),
             ]));
         } else {
-            // First line: marker + timestamp + start of body.
-            let first_chunk: String = full_body.chars().take(body_width).collect();
-            lines.push(Line::from(vec![
-                Span::styled(marker, marker_style),
-                Span::styled(timestamp, timestamp_style),
-                Span::raw(" "),
-                Span::styled(first_chunk, if msg.is_own { sender_style } else { body_style }),
-            ]));
-
-            // Continuation lines: indented past the timestamp column.
+            let wrapped = word_wrap(&full_body, body_width);
             let indent = " ".repeat(prefix_width);
-            let remaining: String = full_body.chars().skip(body_width).collect();
-            let mut rest = remaining.as_str();
-            while !rest.is_empty() {
-                let chunk_len = rest.chars().take(body_width).count();
-                let chunk: String = rest.chars().take(chunk_len).collect();
-                rest = &rest[chunk.len()..];
-                lines.push(Line::from(vec![
-                    Span::raw(indent.clone()),
-                    Span::styled(chunk, body_style),
-                ]));
+            for (line_idx, chunk) in wrapped.iter().enumerate() {
+                if line_idx == 0 {
+                    lines.push(Line::from(vec![
+                        Span::styled(marker, marker_style),
+                        Span::styled(timestamp.clone(), timestamp_style),
+                        Span::raw(" "),
+                        Span::styled(
+                            chunk.clone(),
+                            if msg.is_own { sender_style } else { body_style },
+                        ),
+                    ]));
+                } else {
+                    lines.push(Line::from(vec![
+                        Span::raw(indent.clone()),
+                        Span::styled(chunk.clone(), body_style),
+                    ]));
+                }
             }
         }
     }
@@ -381,5 +460,47 @@ mod tests {
         let buf = render_message_view(&app, 60, 10);
         let content = buffer_content(&buf);
         assert!(content.contains(">>"), "Should show '>>' marker, got:\n{}", content);
+    }
+
+    #[test]
+    fn test_word_wrap_short_text() {
+        let result = word_wrap("hello world", 20);
+        assert_eq!(result, vec!["hello world"]);
+    }
+
+    #[test]
+    fn test_word_wrap_exact_width() {
+        let result = word_wrap("hello", 5);
+        assert_eq!(result, vec!["hello"]);
+    }
+
+    #[test]
+    fn test_word_wrap_breaks_at_space() {
+        let result = word_wrap("hello world foo", 11);
+        assert_eq!(result, vec!["hello world", "foo"]);
+    }
+
+    #[test]
+    fn test_word_wrap_long_word_force_break() {
+        let result = word_wrap("abcdefghij", 5);
+        assert_eq!(result, vec!["abcde", "fghij"]);
+    }
+
+    #[test]
+    fn test_word_wrap_multiple_lines() {
+        let result = word_wrap("the quick brown fox jumps over", 10);
+        assert_eq!(result, vec!["the quick", "brown fox", "jumps over"]);
+    }
+
+    #[test]
+    fn test_word_wrap_empty() {
+        let result = word_wrap("", 10);
+        assert_eq!(result, vec![""]);
+    }
+
+    #[test]
+    fn test_word_wrap_zero_width() {
+        let result = word_wrap("hello", 0);
+        assert_eq!(result, vec!["hello"]);
     }
 }

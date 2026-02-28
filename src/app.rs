@@ -123,6 +123,8 @@ pub struct App {
     pub contact_results: Vec<UserSearchResult>,
     /// Currently selected index in the contact search results.
     pub selected_contact: usize,
+    /// Last-read message index per room, for rendering "new" separator.
+    pub last_read_index: BTreeMap<String, usize>,
     /// Whether Vietnamese input mode (Telex) is enabled.
     pub vigo_enabled: bool,
     /// Vigo FastEngine for Vietnamese input.
@@ -159,7 +161,8 @@ impl App {
             contact_search: String::new(),
             contact_results: Vec::new(),
             selected_contact: 0,
-            vigo_enabled: false,
+            last_read_index: BTreeMap::new(),
+            vigo_enabled: true,
             vigo_engine: vigo::FastEngine::telex(),
             vigo_comp_len: 0,
         }
