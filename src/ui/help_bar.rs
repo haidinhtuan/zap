@@ -10,26 +10,26 @@ use crate::app::{App, Mode};
 pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
     let help_text = match &app.mode {
         Mode::Normal => {
-            " [i]nsert  [/]search  [:]command  j/k:nav  q:quit  \u{26a1}zap"
+            " [c]ompose  [/]search  [:]command  j/k:nav  q:quit"
         }
         Mode::Insert => {
-            " [Enter]send  [Shift+Enter]newline  [Esc]back  \u{26a1}zap"
+            " [Enter]send  [Shift+Enter]newline  [Ctrl+T]vn  [Esc]back"
         }
         Mode::MessageSelect => {
             if app.confirm_delete {
-                " Delete message? y:yes  n:cancel  \u{26a1}zap"
+                " Delete message? y:yes  n:cancel"
             } else {
-                " j/k:nav  r:reply  e:edit  d:delete  i:compose  Esc:back  \u{26a1}zap"
+                " j/k:nav  r:reply  e:edit  d:delete  c:compose  Esc:back"
             }
         }
         Mode::Command(_) => {
-            " [Enter]execute  [Esc]cancel  \u{26a1}zap"
+            " [Enter]execute  [Esc]cancel"
         }
         Mode::RoomFilter => {
-            " Type to filter  @:DMs  #:groups  [Enter]select  [Esc]cancel  \u{26a1}zap"
+            " Type to filter  @:DMs  #:groups  [Enter]select  [Esc]cancel"
         }
         Mode::ContactSearch => {
-            " Type to search contacts  [Enter]open DM  [Esc]cancel  \u{26a1}zap"
+            " Type to search contacts  [Enter]open DM  [Esc]cancel"
         }
     };
 
@@ -76,8 +76,8 @@ mod tests {
         let buf = render_help_bar(&app, 80);
         let content = buffer_content(&buf);
         assert!(
-            content.contains("[i]nsert"),
-            "Normal help should contain '[i]nsert', got: {}",
+            content.contains("[c]ompose"),
+            "Normal help should contain '[c]ompose', got: {}",
             content
         );
         assert!(
@@ -129,13 +129,13 @@ mod tests {
     }
 
     #[test]
-    fn test_help_bar_contains_zap_branding() {
+    fn test_help_bar_no_zap_branding() {
         let app = App::new();
         let buf = render_help_bar(&app, 80);
         let content = buffer_content(&buf);
         assert!(
-            content.contains("zap"),
-            "Help bar should contain 'zap' branding, got: {}",
+            !content.contains("zap"),
+            "Help bar should NOT contain 'zap' branding, got: {}",
             content
         );
     }

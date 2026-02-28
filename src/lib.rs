@@ -27,7 +27,7 @@ pub fn map_key_to_action(key: KeyEvent, mode: &Mode) -> Action {
             KeyCode::Char('q') => Action::Quit,
             KeyCode::Char('j') | KeyCode::Down => Action::RoomNext,
             KeyCode::Char('k') | KeyCode::Up => Action::RoomPrev,
-            KeyCode::Char('i') => Action::ModeInsert,
+            KeyCode::Char('c') => Action::ModeInsert,
             KeyCode::Char(':') => Action::ModeCommand,
             KeyCode::Char('G') => Action::RoomLast,
             KeyCode::Char('/') => Action::RoomFilter,
@@ -45,7 +45,7 @@ pub fn map_key_to_action(key: KeyEvent, mode: &Mode) -> Action {
             KeyCode::Char('r') => Action::ReplyTo,
             KeyCode::Char('e') => Action::EditMessage,
             KeyCode::Char('d') => Action::DeleteMessage,
-            KeyCode::Char('i') => Action::ModeInsert,
+            KeyCode::Char('c') => Action::ModeInsert,
             KeyCode::Char('q') => Action::Quit,
             KeyCode::Esc => Action::ModeNormal,
             _ => Action::None,
@@ -500,6 +500,12 @@ pub async fn run_app(
                             let prev_room = app.selected_room;
                             app.handle_action(action);
                             if app.selected_room != prev_room {
+                                // Record read position for the room we're leaving.
+                                if let Some(old_room) = app.rooms.get(prev_room) {
+                                    if let Some(msgs) = app.messages.get(&old_room.id) {
+                                        app.last_read_index.insert(old_room.id.clone(), msgs.len());
+                                    }
+                                }
                                 if let Some(client) = matrix_client {
                                     if let Some(room) = app.rooms.get(app.selected_room) {
                                         let room_id = room.id.clone();
@@ -516,6 +522,14 @@ pub async fn run_app(
                             let mark_all = matches!(action, Action::MarkAllRead);
                             let sends_receipt = matches!(action, Action::MarkRead | Action::MarkAllRead);
                             app.handle_action(action);
+                            // Record read position when switching rooms.
+                            if app.selected_room != prev_room {
+                                if let Some(old_room) = app.rooms.get(prev_room) {
+                                    if let Some(msgs) = app.messages.get(&old_room.id) {
+                                        app.last_read_index.insert(old_room.id.clone(), msgs.len());
+                                    }
+                                }
+                            }
                             // Send read receipt when room selection changes or on explicit mark-read.
                             if let Some(client) = matrix_client {
                                 if mark_all {
@@ -817,8 +831,8 @@ mod tests {
     }
 
     #[test]
-    fn test_normal_i_insert() {
-        assert_eq!(map_key_to_action(key(KeyCode::Char('i')), &Mode::Normal), Action::ModeInsert);
+    fn test_normal_c_compose() {
+        assert_eq!(map_key_to_action(key(KeyCode::Char('c')), &Mode::Normal), Action::ModeInsert);
     }
 
     #[test]

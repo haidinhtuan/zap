@@ -60,7 +60,7 @@ impl KeymapManager {
         normal.insert("j".to_string(), Action::RoomNext);
         normal.insert("k".to_string(), Action::RoomPrev);
         normal.insert("G".to_string(), Action::RoomLast);
-        normal.insert("i".to_string(), Action::ModeInsert);
+        normal.insert("c".to_string(), Action::ModeInsert);
         normal.insert(":".to_string(), Action::ModeCommand);
         normal.insert("/".to_string(), Action::RoomFilter);
         normal.insert("n".to_string(), Action::NewMessage);
@@ -82,7 +82,7 @@ impl KeymapManager {
         message_select.insert("r".to_string(), Action::ReplyTo);
         message_select.insert("d".to_string(), Action::DeleteMessage);
         message_select.insert("e".to_string(), Action::EditMessage);
-        message_select.insert("i".to_string(), Action::ModeInsert);
+        message_select.insert("c".to_string(), Action::ModeInsert);
         message_select.insert("q".to_string(), Action::Quit);
         message_select.insert("Esc".to_string(), Action::ModeNormal);
 
