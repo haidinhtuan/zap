@@ -5,14 +5,22 @@ use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
 use ratatui::Frame;
 
 use crate::app::{App, Mode};
+use crate::ui::theme;
 
 /// Render the room list panel with selection highlight and unread badges.
 pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
+    let border = theme::color(app, |colors| &colors.border, Color::DarkGray);
+    let accent = theme::color(app, |colors| &colors.accent, Color::Blue);
+    let fg = theme::color(app, |colors| &colors.fg, Color::White);
+    let selected_room = theme::color(app, |colors| &colors.selected_room, Color::DarkGray);
+    let unread = theme::color(app, |colors| &colors.unread_badge, Color::Red);
+    let dm = theme::color(app, |colors| &colors.my_message, Color::Green);
+
     // In ContactSearch mode, replace the room list with search results.
     if app.mode == Mode::ContactSearch {
         let block = Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Magenta))
+            .border_style(Style::default().fg(accent))
             .title(" Contacts ");
 
         if app.contact_results.is_empty() {
@@ -34,8 +42,8 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
             .map(|user| {
                 let display = user.display_name.as_deref().unwrap_or(&user.user_id);
                 let line = Line::from(vec![
-                    Span::styled("@ ", Style::default().fg(Color::Green)),
-                    Span::styled(display, Style::default().fg(Color::White)),
+                    Span::styled("@ ", Style::default().fg(dm)),
+                    Span::styled(display, Style::default().fg(fg)),
                 ]);
                 ListItem::new(line)
             })
@@ -45,7 +53,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
             .block(block)
             .highlight_style(
                 Style::default()
-                    .bg(Color::DarkGray)
+                    .bg(selected_room)
                     .add_modifier(Modifier::BOLD),
             );
 
@@ -56,8 +64,8 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
     }
 
     let border_color = match app.mode {
-        Mode::Normal | Mode::RoomFilter => Color::Blue,
-        _ => Color::DarkGray,
+        Mode::Normal | Mode::RoomFilter => accent,
+        _ => border,
     };
 
     let block = Block::default()
@@ -89,7 +97,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
             if room.unread_count > 0 {
                 spans.push(Span::styled(
                     "\u{25cf}",
-                    Style::default().fg(Color::Red),
+                    Style::default().fg(unread),
                 ));
             } else {
                 spans.push(Span::raw(" "));
@@ -97,7 +105,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
 
             // DM vs group indicator.
             let type_indicator = if room.is_direct { "@ " } else { "# " };
-            let type_color = if room.is_direct { Color::Green } else { Color::DarkGray };
+            let type_color = if room.is_direct { dm } else { border };
             spans.push(Span::styled(type_indicator, Style::default().fg(type_color)));
 
             // Room name with optional unread count, truncated to fit.
@@ -109,9 +117,9 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
             let max_name_len = name_budget.saturating_sub(count_suffix.len());
 
             let name_style = if room.unread_count > 0 {
-                Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
+                Style::default().fg(fg).add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(Color::Gray)
+                Style::default().fg(fg)
             };
 
             if room.name.chars().count() > max_name_len {
@@ -125,7 +133,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
             if room.unread_count > 0 {
                 spans.push(Span::styled(
                     count_suffix,
-                    Style::default().fg(Color::Red),
+                    Style::default().fg(unread),
                 ));
             }
 
@@ -135,11 +143,11 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
 
     let list = List::new(items)
         .block(block)
-        .highlight_style(
-            Style::default()
-                .bg(Color::DarkGray)
-                .add_modifier(Modifier::BOLD),
-        );
+            .highlight_style(
+                Style::default()
+                    .bg(selected_room)
+                    .add_modifier(Modifier::BOLD),
+            );
 
     let mut state = ListState::default();
     let selected_in_filtered = filtered_indices.iter().position(|&i| i == app.selected_room);

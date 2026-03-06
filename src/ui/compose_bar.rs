@@ -5,14 +5,22 @@ use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
 
 use crate::app::{App, Mode};
+use crate::ui::theme;
 
 /// Render the compose bar input area with mode-sensitive prefix and cursor.
 pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
     use ratatui::layout::{Constraint, Layout};
 
+    let border = theme::color(app, |colors| &colors.border, Color::DarkGray);
+    let accent = theme::color(app, |colors| &colors.accent, Color::Yellow);
+    let own = theme::color(app, |colors| &colors.my_message, Color::Green);
+    let theirs = theme::color(app, |colors| &colors.their_message, Color::Cyan);
+    let timestamp = theme::color(app, |colors| &colors.timestamp, Color::DarkGray);
+    let fg = theme::color(app, |colors| &colors.fg, Color::White);
+
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::DarkGray));
+        .border_style(Style::default().fg(border));
 
     // If there's a reply or edit context, split area into context preview + input.
     let has_context = app.reply_context.is_some() || app.edit_context.is_some();
@@ -31,7 +39,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
     if app.edit_context.is_some() {
         if let Some(ctx_rect) = context_area {
             let edit_line = Line::from(vec![
-                Span::styled(" \u{270e} Editing message", Style::default().fg(Color::Yellow)),
+                Span::styled(" \u{270e} Editing message", Style::default().fg(accent)),
             ]);
             frame.render_widget(Paragraph::new(edit_line), ctx_rect);
         }
@@ -41,11 +49,11 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         if let Some(reply_rect) = context_area {
             let truncated_body: String = ctx.body.chars().take(40).collect();
             let reply_line = Line::from(vec![
-                Span::styled(" \u{21a9} ", Style::default().fg(Color::Yellow)),
-                Span::styled(&ctx.sender, Style::default().fg(Color::Cyan)),
+                Span::styled(" \u{21a9} ", Style::default().fg(accent)),
+                Span::styled(&ctx.sender, Style::default().fg(theirs)),
                 Span::styled(
                     format!(": \"{}\"", truncated_body),
-                    Style::default().fg(Color::DarkGray),
+                    Style::default().fg(timestamp),
                 ),
             ]);
             frame.render_widget(Paragraph::new(reply_line), reply_rect);
@@ -54,18 +62,18 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
 
     // Render input line.
     let (prefix, prefix_style) = match &app.mode {
-        Mode::Normal => (">", Style::default().fg(Color::DarkGray)),
+        Mode::Normal => (">", Style::default().fg(timestamp)),
         Mode::Insert => {
             if app.vigo_enabled {
-                (">VI>", Style::default().fg(Color::Green))
+                (">VI>", Style::default().fg(own))
             } else {
-                (">EN>", Style::default().fg(Color::Green))
+                (">EN>", Style::default().fg(own))
             }
         }
-        Mode::MessageSelect => (">", Style::default().fg(Color::Yellow)),
-        Mode::Command(_) => (":", Style::default().fg(Color::Yellow)),
-        Mode::RoomFilter => ("/", Style::default().fg(Color::Yellow)),
-        Mode::ContactSearch => ("@", Style::default().fg(Color::Magenta)),
+        Mode::MessageSelect => (">", Style::default().fg(accent)),
+        Mode::Command(_) => (":", Style::default().fg(accent)),
+        Mode::RoomFilter => ("/", Style::default().fg(accent)),
+        Mode::ContactSearch => ("@", Style::default().fg(accent)),
     };
 
     if app.mode == Mode::Insert {
@@ -96,11 +104,11 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         let mut spans = vec![
             Span::styled(prefix, prefix_style),
             Span::raw(" "),
-            Span::raw(display_text),
+            Span::styled(display_text, Style::default().fg(fg)),
         ];
         // Show cursor in RoomFilter and ContactSearch modes.
         if matches!(app.mode, Mode::RoomFilter | Mode::ContactSearch) {
-            spans.push(Span::styled("\u{2588}", Style::default().fg(Color::White)));
+            spans.push(Span::styled("\u{2588}", Style::default().fg(fg)));
         }
         let line = Line::from(spans);
         frame.render_widget(Paragraph::new(line), input_area);

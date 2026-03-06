@@ -5,6 +5,7 @@ use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
 
 use crate::app::{App, Mode};
+use crate::ui::theme;
 
 fn date_label(date: chrono::NaiveDate) -> String {
     use chrono::Datelike;
@@ -53,11 +54,25 @@ fn word_wrap(text: &str, max_width: usize) -> Vec<String> {
     lines
 }
 
+fn format_timestamp(app: &App, timestamp: &chrono::DateTime<chrono::Utc>) -> String {
+    timestamp
+        .with_timezone(&chrono::Local)
+        .format(&app.timestamp_format)
+        .to_string()
+}
+
 /// Render the message view area showing the room header and message list.
 pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
+    let border = theme::color(app, |colors| &colors.border, Color::DarkGray);
+    let accent = theme::color(app, |colors| &colors.accent, Color::Yellow);
+    let own = theme::color(app, |colors| &colors.my_message, Color::Green);
+    let theirs = theme::color(app, |colors| &colors.their_message, Color::Cyan);
+    let timestamp_color = theme::color(app, |colors| &colors.timestamp, Color::DarkGray);
+    let fg = theme::color(app, |colors| &colors.fg, Color::White);
+
     let border_color = match app.mode {
-        Mode::MessageSelect => Color::Yellow,
-        _ => Color::DarkGray,
+        Mode::MessageSelect => accent,
+        _ => border,
     };
 
     let block = Block::default()
@@ -78,7 +93,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
 
     // Build room header title.
     let activity_str = match &room.last_activity {
-        Some(dt) => dt.format("%H:%M").to_string(),
+        Some(dt) => dt.with_timezone(&chrono::Local).format(&app.timestamp_format).to_string(),
         None => String::new(),
     };
 
@@ -103,9 +118,14 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
 
     let messages = messages.unwrap();
 
-    // Fixed prefix width: marker(2) + timestamp(5) + space(1) = 8 chars.
+    // Prefix width is marker(2) + longest visible timestamp + space(1).
     // Continuation lines are indented to this width so they don't overlap the timestamp column.
-    let prefix_width = 8;
+    let timestamp_width = messages
+        .iter()
+        .map(|msg| format_timestamp(app, &msg.timestamp).chars().count())
+        .max()
+        .unwrap_or(5);
+    let prefix_width = 2 + timestamp_width + 1;
     let inner_width = area.width.saturating_sub(2) as usize; // subtract borders
     let inner_height = area.height.saturating_sub(2) as usize;
     let body_width = inner_width.saturating_sub(prefix_width);
@@ -124,7 +144,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
             let sep = format!("{}{}{}", "─".repeat(left), label, "─".repeat(right));
             lines.push(Line::from(Span::styled(
                 sep,
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(timestamp_color),
             )));
             prev_date = Some(msg_date);
         }
@@ -142,12 +162,12 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
                 );
                 lines.push(Line::from(Span::styled(
                     sep,
-                    Style::default().fg(Color::Yellow),
+                    Style::default().fg(accent),
                 )));
             }
         }
 
-        let timestamp = msg.timestamp.format("%H:%M").to_string();
+        let timestamp = format!("{:>width$}", format_timestamp(app, &msg.timestamp), width = timestamp_width);
 
         let is_selected = app.mode == Mode::MessageSelect && app.selected_message == Some(i);
         let is_delete_target = is_selected && app.confirm_delete;
@@ -155,21 +175,21 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         let sender_style = if is_delete_target {
             Style::default().fg(Color::Red).add_modifier(Modifier::CROSSED_OUT)
         } else if msg.is_own {
-            Style::default().fg(Color::Green)
+            Style::default().fg(own)
         } else {
-            Style::default().fg(Color::Cyan)
+            Style::default().fg(theirs)
         };
 
         let body_style = if is_delete_target {
             Style::default().fg(Color::Red).add_modifier(Modifier::CROSSED_OUT)
         } else if msg.is_own {
-            Style::default().fg(Color::Green)
+            Style::default().fg(own)
         } else {
-            Style::default()
+            Style::default().fg(fg)
         };
 
         let timestamp_style = Style::default()
-            .fg(Color::DarkGray)
+            .fg(timestamp_color)
             .add_modifier(Modifier::DIM);
 
         // Show reply indicator if this message is a reply.
@@ -184,11 +204,15 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
                 })
                 .unwrap_or_else(|| "| reply".to_string());
             lines.push(Line::from(vec![
-                Span::raw(format!("{}     ", prefix)),
+                Span::raw(format!(
+                    "{}{}",
+                    prefix,
+                    " ".repeat(prefix_width.saturating_sub(2))
+                )),
                 Span::styled(
                     reply_text,
                     Style::default()
-                        .fg(Color::DarkGray)
+                        .fg(timestamp_color)
                         .add_modifier(Modifier::ITALIC),
                 ),
             ]));
@@ -197,7 +221,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         let (marker, marker_style) = if is_delete_target {
             ("xx", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD))
         } else if is_selected {
-            (">>", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+            (">>", Style::default().fg(accent).add_modifier(Modifier::BOLD))
         } else {
             ("  ", Style::default())
         };
