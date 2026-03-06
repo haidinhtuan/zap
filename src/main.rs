@@ -1,4 +1,5 @@
 use clap::Parser;
+use std::path::Path;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use zap::app::App;
@@ -6,6 +7,7 @@ use zap::config;
 use zap::event::EventHandler;
 use zap::input::KeymapManager;
 use zap::matrix::sync::MatrixEvent;
+use zap::store::LocalStore;
 
 /// Zap - A terminal messenger client using Matrix bridges.
 #[derive(Parser, Debug)]
@@ -28,20 +30,21 @@ struct Cli {
 async fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
     let cli = Cli::parse();
+    let paths = config::resolve_paths(cli.config.as_deref().map(Path::new));
 
     // Set up logging.
     if cli.verbose {
         std::env::set_var("RUST_LOG", "debug");
     }
-    let _log_guard = zap::logging::init_logging(&config::log_dir())
+    let _log_guard = zap::logging::init_logging(&paths.log_dir)
         .expect("failed to initialize logging");
 
     tracing::info!("zap v0.1.0 starting");
 
     // Ensure config files exist and load them.
-    config::ensure_config_files()?;
+    config::ensure_config_files_in(&paths)?;
 
-    let config_dir = config::config_dir();
+    let config_dir = &paths.config_dir;
     let app_config = config::parse_config(
         &std::fs::read_to_string(config_dir.join("config.toml"))?,
     )?;
@@ -67,13 +70,13 @@ async fn main() -> color_eyre::Result<()> {
 
         match zap::matrix::client::create_client(
             &app_config.matrix.homeserver,
-            &config::data_dir(),
+            &paths.data_dir,
         )
         .await
         {
             Ok(client) => {
                 // Login (restores session or prompts for password).
-                if let Err(e) = zap::matrix::login::login(&client, &app_config.matrix.username, &config::data_dir()).await {
+                if let Err(e) = zap::matrix::login::login(&client, &app_config.matrix.username, &paths.data_dir).await {
                     tracing::warn!("Matrix login failed: {}. Running in offline mode.", e);
                     let (_tx, rx) = mpsc::unbounded_channel::<MatrixEvent>();
                     (None, rx)
@@ -100,8 +103,8 @@ async fn main() -> color_eyre::Result<()> {
     };
 
     // Open local storage for drafts/preferences.
-    let db_path = config::data_dir().join("zap.db");
-    let _store = match zap::store::LocalStore::open(&db_path) {
+    let db_path = paths.data_dir.join("zap.db");
+    let store = match LocalStore::open(&db_path) {
         Ok(store) => {
             tracing::info!("Local storage opened at {:?}", db_path);
             Some(store)
@@ -118,6 +121,16 @@ async fn main() -> color_eyre::Result<()> {
     // Apply config to app state.
     app.theme = Some(theme_config);
     app.room_list_width = app_config.ui.room_list_width;
+    app.show_help_bar = app_config.ui.show_help_bar;
+    app.send_read_receipts = app_config.behavior.send_read_receipts;
+    app.timestamp_format = app_config.ui.timestamp_format.clone();
+    app.vim_mode = app_config.behavior.vim_mode;
+
+    if let Some(store) = store.as_ref() {
+        if let Ok(Some(vigo_enabled)) = store.load_preference("vigo_enabled") {
+            app.vigo_enabled = vigo_enabled == "true";
+        }
+    }
 
     // Store own user ID for is_own detection.
     if let Some(ref client) = matrix_client {
@@ -148,6 +161,7 @@ async fn main() -> color_eyre::Result<()> {
         &mut keymap,
         &mut matrix_rx,
         matrix_client.as_ref(),
+        store.as_ref(),
     )
     .await;
 

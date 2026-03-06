@@ -3,6 +3,7 @@ pub mod room_list;
 pub mod message_view;
 pub mod compose_bar;
 pub mod help_bar;
+pub mod theme;
 
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout};
@@ -10,12 +11,23 @@ use crate::app::App;
 
 /// Render the full application layout into the given frame.
 pub fn draw(frame: &mut Frame, app: &App) {
-    let [status_area, body_area, help_area] = Layout::vertical([
-        Constraint::Length(1),
-        Constraint::Fill(1),
-        Constraint::Length(1),
-    ])
-    .areas(frame.area());
+    let vertical = if app.show_help_bar {
+        Layout::vertical([
+            Constraint::Length(1),
+            Constraint::Fill(1),
+            Constraint::Length(1),
+        ])
+    } else {
+        Layout::vertical([Constraint::Length(1), Constraint::Fill(1)])
+    };
+
+    let (status_area, body_area, help_area) = if app.show_help_bar {
+        let [status_area, body_area, help_area] = vertical.areas(frame.area());
+        (status_area, body_area, Some(help_area))
+    } else {
+        let [status_area, body_area] = vertical.areas(frame.area());
+        (status_area, body_area, None)
+    };
 
     let [room_area, chat_area] = Layout::horizontal([
         Constraint::Length(app.room_list_width + 2), // + borders
@@ -42,5 +54,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
     room_list::draw(frame, app, room_area);
     message_view::draw(frame, app, message_area);
     compose_bar::draw(frame, app, compose_area);
-    help_bar::draw(frame, app, help_area);
+    if let Some(help_area) = help_area {
+        help_bar::draw(frame, app, help_area);
+    }
 }

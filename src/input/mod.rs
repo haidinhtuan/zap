@@ -21,23 +21,21 @@ impl KeymapManager {
     /// so new keybindings added in future versions are always available even
     /// if the user has an older config file.
     pub fn from_config(config: &KeymapConfig) -> Self {
-        let defaults = Self::default_keymap();
+        let (mut normal, mut insert, mut message_select) =
+            Self::parse_bindings(&KeymapConfig::default());
 
-        let mut normal = defaults.normal;
         for (key, action_str) in &config.normal {
             if let Some(action) = Self::parse_action(action_str) {
                 normal.insert(key.clone(), action);
             }
         }
 
-        let mut insert = defaults.insert;
         for (key, action_str) in &config.insert {
             if let Some(action) = Self::parse_action(action_str) {
                 insert.insert(key.clone(), action);
             }
         }
 
-        let mut message_select = defaults.message_select;
         for (key, action_str) in &config.message_select {
             if let Some(action) = Self::parse_action(action_str) {
                 message_select.insert(key.clone(), action);
@@ -55,36 +53,8 @@ impl KeymapManager {
 
     /// Create a KeymapManager with hardcoded default keybindings.
     pub fn default_keymap() -> Self {
-        let mut normal = HashMap::new();
-        normal.insert("q".to_string(), Action::Quit);
-        normal.insert("j".to_string(), Action::RoomNext);
-        normal.insert("k".to_string(), Action::RoomPrev);
-        normal.insert("G".to_string(), Action::RoomLast);
-        normal.insert("c".to_string(), Action::ModeInsert);
-        normal.insert(":".to_string(), Action::ModeCommand);
-        normal.insert("/".to_string(), Action::RoomFilter);
-        normal.insert("n".to_string(), Action::NewMessage);
-        normal.insert("Enter".to_string(), Action::EnterMessageSelect);
-        normal.insert("r".to_string(), Action::MarkRead);
-        normal.insert("R".to_string(), Action::MarkAllRead);
-        normal.insert("Ctrl+u".to_string(), Action::ScrollUp);
-        normal.insert("Ctrl+d".to_string(), Action::ScrollDown);
-
-        let mut insert = HashMap::new();
-        insert.insert("Esc".to_string(), Action::ModeNormal);
-        insert.insert("Enter".to_string(), Action::SendMessage);
-
-        let mut message_select = HashMap::new();
-        message_select.insert("j".to_string(), Action::MessageNext);
-        message_select.insert("k".to_string(), Action::MessagePrev);
-        message_select.insert("Down".to_string(), Action::MessageNext);
-        message_select.insert("Up".to_string(), Action::MessagePrev);
-        message_select.insert("r".to_string(), Action::ReplyTo);
-        message_select.insert("d".to_string(), Action::DeleteMessage);
-        message_select.insert("e".to_string(), Action::EditMessage);
-        message_select.insert("c".to_string(), Action::ModeInsert);
-        message_select.insert("q".to_string(), Action::Quit);
-        message_select.insert("Esc".to_string(), Action::ModeNormal);
+        let (normal, insert, message_select) =
+            Self::parse_bindings(&KeymapConfig::default());
 
         Self {
             normal,
@@ -93,6 +63,34 @@ impl KeymapManager {
             pending_key: None,
             multi_key_timeout: Duration::from_millis(500),
         }
+    }
+
+    fn parse_bindings(
+        config: &KeymapConfig,
+    ) -> (
+        HashMap<String, Action>,
+        HashMap<String, Action>,
+        HashMap<String, Action>,
+    ) {
+        let normal = config
+            .normal
+            .iter()
+            .filter_map(|(key, action)| Self::parse_action(action).map(|parsed| (key.clone(), parsed)))
+            .collect();
+
+        let insert = config
+            .insert
+            .iter()
+            .filter_map(|(key, action)| Self::parse_action(action).map(|parsed| (key.clone(), parsed)))
+            .collect();
+
+        let message_select = config
+            .message_select
+            .iter()
+            .filter_map(|(key, action)| Self::parse_action(action).map(|parsed| (key.clone(), parsed)))
+            .collect();
+
+        (normal, insert, message_select)
     }
 
     /// Resolve a key event into an action based on the current mode.

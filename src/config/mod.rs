@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
+use std::path::Path;
 use std::path::PathBuf;
 
 /// Top-level application configuration.
@@ -63,6 +64,14 @@ pub struct KeymapConfig {
     pub insert: HashMap<String, String>,
     #[serde(default)]
     pub message_select: HashMap<String, String>,
+}
+
+/// Resolved filesystem paths used by the application.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppPaths {
+    pub config_dir: PathBuf,
+    pub data_dir: PathBuf,
+    pub log_dir: PathBuf,
 }
 
 // ---------------------------------------------------------------------------
@@ -142,6 +151,7 @@ impl Default for KeymapConfig {
         normal.insert("k".to_string(), "room_prev".to_string());
         normal.insert("Up".to_string(), "room_prev".to_string());
         normal.insert("Down".to_string(), "room_next".to_string());
+        normal.insert("c".to_string(), "insert_mode".to_string());
         normal.insert("i".to_string(), "insert_mode".to_string());
         normal.insert(":".to_string(), "command_mode".to_string());
         normal.insert("G".to_string(), "room_last".to_string());
@@ -165,6 +175,7 @@ impl Default for KeymapConfig {
         message_select.insert("r".to_string(), "reply_to".to_string());
         message_select.insert("d".to_string(), "delete_message".to_string());
         message_select.insert("e".to_string(), "edit_message".to_string());
+        message_select.insert("c".to_string(), "mode_insert".to_string());
         message_select.insert("i".to_string(), "mode_insert".to_string());
         message_select.insert("q".to_string(), "quit".to_string());
         message_select.insert("Esc".to_string(), "mode_normal".to_string());
@@ -179,21 +190,50 @@ impl Default for KeymapConfig {
 
 /// Returns the XDG configuration directory for Zap (~/.config/zap).
 pub fn config_dir() -> PathBuf {
-    dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from(".config"))
-        .join("zap")
+    default_paths().config_dir
 }
 
 /// Returns the XDG data directory for Zap (~/.local/share/zap).
 pub fn data_dir() -> PathBuf {
-    dirs::data_dir()
-        .unwrap_or_else(|| PathBuf::from(".local/share"))
-        .join("zap")
+    default_paths().data_dir
 }
 
 /// Returns the log directory for Zap (inside the data directory).
 pub fn log_dir() -> PathBuf {
-    data_dir().join("logs")
+    default_paths().log_dir
+}
+
+/// Resolve the filesystem paths Zap should use for this run.
+///
+/// A custom config directory overrides only the config location. Data and logs
+/// still live under the XDG data directory so existing Matrix sessions and
+/// SQLite state continue to work.
+pub fn resolve_paths(custom_config_dir: Option<&Path>) -> AppPaths {
+    let defaults = default_paths();
+
+    let config_dir = custom_config_dir
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| defaults.config_dir.clone());
+
+    AppPaths {
+        config_dir,
+        data_dir: defaults.data_dir,
+        log_dir: defaults.log_dir,
+    }
+}
+
+fn default_paths() -> AppPaths {
+    let data_dir = dirs::data_dir()
+        .unwrap_or_else(|| PathBuf::from(".local/share"))
+        .join("zap");
+
+    AppPaths {
+        config_dir: dirs::config_dir()
+            .unwrap_or_else(|| PathBuf::from(".config"))
+            .join("zap"),
+        log_dir: data_dir.join("logs"),
+        data_dir,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -237,26 +277,30 @@ pub fn serialize_keymap(keymap: &KeymapConfig) -> Result<String, toml::ser::Erro
 /// Ensure the default configuration files exist on disk.
 /// Creates directories and writes default TOML files if they are absent.
 pub fn ensure_config_files() -> std::io::Result<()> {
-    let cfg_dir = config_dir();
-    fs::create_dir_all(&cfg_dir)?;
-    fs::create_dir_all(data_dir())?;
-    fs::create_dir_all(log_dir())?;
+    ensure_config_files_in(&default_paths())
+}
 
-    let config_path = cfg_dir.join("config.toml");
+/// Ensure the configuration and data directories exist for the provided paths.
+pub fn ensure_config_files_in(paths: &AppPaths) -> std::io::Result<()> {
+    fs::create_dir_all(&paths.config_dir)?;
+    fs::create_dir_all(&paths.data_dir)?;
+    fs::create_dir_all(&paths.log_dir)?;
+
+    let config_path = paths.config_dir.join("config.toml");
     if !config_path.exists() {
         let default_config = serialize_config(&AppConfig::default())
             .expect("failed to serialize default config");
         fs::write(&config_path, default_config)?;
     }
 
-    let theme_path = cfg_dir.join("theme.toml");
+    let theme_path = paths.config_dir.join("theme.toml");
     if !theme_path.exists() {
         let default_theme = serialize_theme(&ThemeConfig::default())
             .expect("failed to serialize default theme");
         fs::write(&theme_path, default_theme)?;
     }
 
-    let keymap_path = cfg_dir.join("keymap.toml");
+    let keymap_path = paths.config_dir.join("keymap.toml");
     if !keymap_path.exists() {
         let default_keymap = serialize_keymap(&KeymapConfig::default())
             .expect("failed to serialize default keymap");
@@ -308,6 +352,8 @@ mod tests {
         let km = KeymapConfig::default();
         assert_eq!(km.normal.get("q").unwrap(), "quit");
         assert_eq!(km.normal.get("j").unwrap(), "room_next");
+        assert_eq!(km.normal.get("c").unwrap(), "insert_mode");
+        assert_eq!(km.normal.get("i").unwrap(), "insert_mode");
         assert_eq!(km.insert.get("Esc").unwrap(), "normal_mode");
         assert_eq!(km.insert.get("Enter").unwrap(), "send_message");
     }
@@ -404,6 +450,15 @@ help_bar_fg = "#999999"
     }
 
     #[test]
+    fn test_resolve_paths_uses_custom_config_dir_only() {
+        let custom = Path::new("/tmp/zap-config");
+        let paths = resolve_paths(Some(custom));
+        assert_eq!(paths.config_dir, custom);
+        assert!(paths.data_dir.ends_with("zap"));
+        assert!(paths.log_dir.ends_with("logs"));
+    }
+
+    #[test]
     fn test_parse_invalid_toml() {
         let result = parse_config("this is not valid toml {{{{");
         assert!(result.is_err());
@@ -432,5 +487,23 @@ help_bar_fg = "#999999"
 
         let parsed = parse_config(&fs::read_to_string(&cfg).unwrap()).unwrap();
         assert_eq!(parsed, AppConfig::default());
+    }
+
+    #[test]
+    fn test_ensure_config_files_in_custom_paths() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = AppPaths {
+            config_dir: tmp.path().join("cfg"),
+            data_dir: tmp.path().join("data"),
+            log_dir: tmp.path().join("data").join("logs"),
+        };
+
+        ensure_config_files_in(&paths).unwrap();
+
+        assert!(paths.config_dir.join("config.toml").exists());
+        assert!(paths.config_dir.join("theme.toml").exists());
+        assert!(paths.config_dir.join("keymap.toml").exists());
+        assert!(paths.data_dir.exists());
+        assert!(paths.log_dir.exists());
     }
 }

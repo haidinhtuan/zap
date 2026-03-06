@@ -5,21 +5,30 @@ use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
 use crate::app::{App, Mode};
+use crate::ui::theme;
 
 /// Render context-sensitive keyboard hints at the bottom of the screen.
 pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
     let help_text = match &app.mode {
         Mode::Normal => {
-            " [c]ompose  [/]search  [:]command  j/k:nav  q:quit"
+            if app.vim_mode {
+                " [c]/[i]compose  [/]search  [:]command  j/k:nav  q:quit"
+            } else {
+                " [c]/[i]compose  [/]search  [:]command  arrows:nav  q:quit"
+            }
         }
         Mode::Insert => {
-            " [Enter]send  [Shift+Enter]newline  [Ctrl+T]vn  [Esc]back"
+            " [Enter]send  [Shift+Enter]newline  [Ctrl+T]vn  [Esc]save  [Ctrl+X]clear"
         }
         Mode::MessageSelect => {
             if app.confirm_delete {
                 " Delete message? y:yes  n:cancel"
             } else {
-                " j/k:nav  r:reply  e:edit  d:delete  c:compose  Esc:back"
+                if app.vim_mode {
+                    " j/k:nav  r:reply  e:edit  d:delete  c/i:compose  Esc:back"
+                } else {
+                    " arrows:nav  r:reply  e:edit  d:delete  c/i:compose  Esc:back"
+                }
             }
         }
         Mode::Command(_) => {
@@ -34,7 +43,11 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
     };
 
     let bar = Paragraph::new(Line::raw(help_text))
-        .style(Style::default().fg(Color::DarkGray));
+        .style(Style::default().fg(theme::color(
+            app,
+            |colors| &colors.help_bar_fg,
+            Color::DarkGray,
+        )));
 
     frame.render_widget(bar, area);
 }
@@ -76,8 +89,8 @@ mod tests {
         let buf = render_help_bar(&app, 80);
         let content = buffer_content(&buf);
         assert!(
-            content.contains("[c]ompose"),
-            "Normal help should contain '[c]ompose', got: {}",
+            content.contains("[c]/[i]compose"),
+            "Normal help should contain '[c]/[i]compose', got: {}",
             content
         );
         assert!(
@@ -104,8 +117,8 @@ mod tests {
             content
         );
         assert!(
-            content.contains("[Esc]back"),
-            "Insert help should contain '[Esc]back', got: {}",
+            content.contains("[Esc]save"),
+            "Insert help should contain '[Esc]save', got: {}",
             content
         );
     }
@@ -151,6 +164,11 @@ mod tests {
             "MessageSelect help should contain 'e:edit', got: {}",
             content
         );
+        assert!(
+            content.contains("c/i:compose"),
+            "MessageSelect help should contain 'c/i:compose', got: {}",
+            content
+        );
     }
 
     #[test]
@@ -164,5 +182,14 @@ mod tests {
             "RoomFilter help should contain 'filter', got: {}",
             content
         );
+    }
+
+    #[test]
+    fn test_help_bar_non_vim_mode_shows_arrows() {
+        let mut app = App::new();
+        app.vim_mode = false;
+        let buf = render_help_bar(&app, 80);
+        let content = buffer_content(&buf);
+        assert!(content.contains("arrows:nav"), "Non-vim help should contain 'arrows:nav', got: {}", content);
     }
 }

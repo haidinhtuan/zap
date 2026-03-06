@@ -108,6 +108,10 @@ pub struct App {
     pub connection_status: ConnectionStatus,
     pub theme: Option<ThemeConfig>,
     pub room_list_width: u16,
+    pub show_help_bar: bool,
+    pub send_read_receipts: bool,
+    pub timestamp_format: String,
+    pub vim_mode: bool,
     pub selected_message: Option<usize>,
     pub reply_context: Option<ReplyContext>,
     pub edit_context: Option<EditContext>,
@@ -152,6 +156,10 @@ impl App {
             connection_status: ConnectionStatus::Disconnected,
             theme: None,
             room_list_width: 30,
+            show_help_bar: true,
+            send_read_receipts: true,
+            timestamp_format: "%H:%M".to_string(),
+            vim_mode: true,
             selected_message: None,
             reply_context: None,
             edit_context: None,
@@ -237,8 +245,9 @@ impl App {
                 self.selected_contact = 0;
             }
             Action::ModeInsert => {
-                if self.mode == Mode::Normal {
+                if matches!(self.mode, Mode::Normal | Mode::MessageSelect) {
                     self.mode = Mode::Insert;
+                    self.selected_message = None;
                 }
             }
             Action::ModeCommand => {
