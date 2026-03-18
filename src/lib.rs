@@ -91,6 +91,10 @@ pub async fn run_app(
     let mut last_receipt_room: Option<String> = None;
     // Track when we last received a matrix event for staleness detection.
     let mut last_sync_event = Instant::now();
+    // Track last user keypress so we can defer room re-sorting until idle.
+    let mut last_keypress = Instant::now();
+    // Whether the room list needs re-sorting (deferred until user is idle).
+    let mut rooms_need_sort = false;
 
     loop {
         prime_selected_room(
@@ -105,9 +109,26 @@ pub async fn run_app(
             event = events.next() => {
                 match event? {
                     Event::Key(key) => {
+                        last_keypress = Instant::now();
                         handle_key_event(app, key, keymap, matrix_client, store).await;
                     }
                     Event::Render => {
+                        // Re-sort the room list once the user has been idle
+                        // for 2 seconds, so rooms reflect recent activity
+                        // without jumping around during active navigation.
+                        if rooms_need_sort
+                            && last_keypress.elapsed() > std::time::Duration::from_secs(2)
+                        {
+                            let current_room_id = current_room_id(app);
+                            sort_rooms_by_activity(app);
+                            // Keep selection on the same room after re-sort.
+                            if let Some(rid) = current_room_id {
+                                if let Some(pos) = app.rooms.iter().position(|r| r.id == rid) {
+                                    app.selected_room = pos;
+                                }
+                            }
+                            rooms_need_sort = false;
+                        }
                         // Detect stale connection: if no matrix event arrived
                         // within the threshold, the sync loop is likely stuck
                         // or dead — update status so the user knows.
@@ -135,7 +156,8 @@ pub async fn run_app(
             }
             Some(matrix_event) = matrix_rx.recv() => {
                 last_sync_event = Instant::now();
-                handle_matrix_event(app, matrix_event);
+                let needs_sort = handle_matrix_event(app, matrix_event);
+                rooms_need_sort = rooms_need_sort || needs_sort;
             }
             // Sync task died (channel closed) — mark disconnected.
             else => {
@@ -754,7 +776,9 @@ fn handle_mouse_event(app: &mut App, mouse: crossterm::event::MouseEvent) {
     }
 }
 
-fn handle_matrix_event(app: &mut App, matrix_event: MatrixEvent) {
+/// Handle a matrix event. Returns `true` when the room list should be
+/// re-sorted (deferred until the user is idle).
+fn handle_matrix_event(app: &mut App, matrix_event: MatrixEvent) -> bool {
     match matrix_event {
         MatrixEvent::RoomListUpdate(mut rooms) => {
             if app.rooms.is_empty() {
@@ -772,6 +796,7 @@ fn handle_matrix_event(app: &mut App, matrix_event: MatrixEvent) {
                     b_ts.cmp(&a_ts).then_with(|| a.id.cmp(&b.id))
                 });
                 app.rooms = rooms;
+                return false;
             } else {
                 // Subsequent syncs: merge updates while preserving the
                 // current display order so rooms don't jump around.
@@ -818,6 +843,7 @@ fn handle_matrix_event(app: &mut App, matrix_event: MatrixEvent) {
 
             app.connection_status = app::ConnectionStatus::Connected;
             tracing::debug!("Room list updated: {} rooms", app.rooms.len());
+            true
         }
         MatrixEvent::NewMessage { room_id, message } => {
             let msgs = app.messages.entry(room_id).or_default();
@@ -826,10 +852,11 @@ fn handle_matrix_event(app: &mut App, matrix_event: MatrixEvent) {
                 .as_ref()
                 .is_some_and(|event_id| msgs.iter().any(|msg| msg.event_id.as_ref() == Some(event_id)));
             if is_duplicate {
-                return;
+                return false;
             }
 
             msgs.push(message);
+            true
         }
         MatrixEvent::MessageEdited {
             room_id,
@@ -844,14 +871,31 @@ fn handle_matrix_event(app: &mut App, matrix_event: MatrixEvent) {
                     msg.body = new_body;
                 }
             }
+            false
         }
         MatrixEvent::SyncError(err) => {
             tracing::warn!("Matrix sync error: {}", err);
             app.connection_status = app::ConnectionStatus::Disconnected;
+            false
         }
     }
 }
 
+
+fn sort_rooms_by_activity(app: &mut App) {
+    let messages = &app.messages;
+    app.rooms.sort_by(|a, b| {
+        let a_ts = messages
+            .get(&a.id)
+            .and_then(|msgs| msgs.last().map(|msg| msg.timestamp))
+            .or(a.last_activity);
+        let b_ts = messages
+            .get(&b.id)
+            .and_then(|msgs| msgs.last().map(|msg| msg.timestamp))
+            .or(b.last_activity);
+        b_ts.cmp(&a_ts).then_with(|| a.id.cmp(&b.id))
+    });
+}
 
 fn current_room_id(app: &App) -> Option<String> {
     app.rooms.get(app.selected_room).map(|room| room.id.clone())
