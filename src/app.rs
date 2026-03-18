@@ -257,14 +257,30 @@ impl App {
             }
             Action::RoomNext => {
                 if self.mode == Mode::Normal && !self.rooms.is_empty() {
-                    self.selected_room = (self.selected_room + 1).min(self.rooms.len() - 1);
+                    let filtered = self.filtered_room_indices();
+                    if let Some(cur) = filtered.iter().position(|&i| i == self.selected_room) {
+                        if cur + 1 < filtered.len() {
+                            self.selected_room = filtered[cur + 1];
+                        }
+                    } else if let Some(&first) = filtered.first() {
+                        self.selected_room = first;
+                    }
                     self.scroll_offset = 0;
-                    self.rooms[self.selected_room].unread_count = 0;
+                    if let Some(room) = self.rooms.get_mut(self.selected_room) {
+                        room.unread_count = 0;
+                    }
                 }
             }
             Action::RoomPrev => {
-                if self.mode == Mode::Normal {
-                    self.selected_room = self.selected_room.saturating_sub(1);
+                if self.mode == Mode::Normal && !self.rooms.is_empty() {
+                    let filtered = self.filtered_room_indices();
+                    if let Some(cur) = filtered.iter().position(|&i| i == self.selected_room) {
+                        if cur > 0 {
+                            self.selected_room = filtered[cur - 1];
+                        }
+                    } else if let Some(&first) = filtered.first() {
+                        self.selected_room = first;
+                    }
                     self.scroll_offset = 0;
                     if let Some(room) = self.rooms.get_mut(self.selected_room) {
                         room.unread_count = 0;
@@ -273,16 +289,26 @@ impl App {
             }
             Action::RoomFirst => {
                 if self.mode == Mode::Normal && !self.rooms.is_empty() {
-                    self.selected_room = 0;
+                    let filtered = self.filtered_room_indices();
+                    if let Some(&first) = filtered.first() {
+                        self.selected_room = first;
+                    }
                     self.scroll_offset = 0;
-                    self.rooms[self.selected_room].unread_count = 0;
+                    if let Some(room) = self.rooms.get_mut(self.selected_room) {
+                        room.unread_count = 0;
+                    }
                 }
             }
             Action::RoomLast => {
                 if self.mode == Mode::Normal && !self.rooms.is_empty() {
-                    self.selected_room = self.rooms.len() - 1;
+                    let filtered = self.filtered_room_indices();
+                    if let Some(&last) = filtered.last() {
+                        self.selected_room = last;
+                    }
                     self.scroll_offset = 0;
-                    self.rooms[self.selected_room].unread_count = 0;
+                    if let Some(room) = self.rooms.get_mut(self.selected_room) {
+                        room.unread_count = 0;
+                    }
                 }
             }
             Action::OpenRoom => {
