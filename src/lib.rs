@@ -9,7 +9,7 @@ pub mod matrix;
 pub mod store;
 pub mod ui;
 
-use app::{Action, App, Message, Mode};
+use app::{Action, App, Message, Mode, Room};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use event::{Event, EventHandler};
 use input::KeymapManager;
@@ -18,6 +18,12 @@ use matrix_sdk::ruma::events::room::message::RoomMessageEventContent;
 use ratatui::DefaultTerminal;
 use store::LocalStore;
 use tokio::sync::mpsc;
+use tokio::time::Instant;
+
+/// Duration after which the connection is considered stale if no sync event
+/// has been received. Matrix long-polling typically returns within 30s, so
+/// 90s without any event strongly indicates the sync loop is stuck or dead.
+const SYNC_STALENESS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(90);
 
 /// Map a key event to an application action based on the current mode.
 ///
@@ -83,6 +89,8 @@ pub async fn run_app(
     let mut history_loaded: std::collections::HashSet<String> = std::collections::HashSet::new();
     // Track which room we last sent a read receipt for.
     let mut last_receipt_room: Option<String> = None;
+    // Track when we last received a matrix event for staleness detection.
+    let mut last_sync_event = Instant::now();
 
     loop {
         prime_selected_room(
@@ -100,6 +108,18 @@ pub async fn run_app(
                         handle_key_event(app, key, keymap, matrix_client, store).await;
                     }
                     Event::Render => {
+                        // Detect stale connection: if no matrix event arrived
+                        // within the threshold, the sync loop is likely stuck
+                        // or dead — update status so the user knows.
+                        if app.connection_status == app::ConnectionStatus::Connected
+                            && last_sync_event.elapsed() > SYNC_STALENESS_TIMEOUT
+                        {
+                            tracing::warn!(
+                                "No sync event for {:?}, marking connection as disconnected",
+                                last_sync_event.elapsed()
+                            );
+                            app.connection_status = app::ConnectionStatus::Disconnected;
+                        }
                         terminal.draw(|frame| {
                             ui::draw(frame, app);
                         })?;
@@ -114,7 +134,13 @@ pub async fn run_app(
                 }
             }
             Some(matrix_event) = matrix_rx.recv() => {
+                last_sync_event = Instant::now();
                 handle_matrix_event(app, matrix_event);
+            }
+            // Sync task died (channel closed) — mark disconnected.
+            else => {
+                tracing::error!("Matrix sync channel closed unexpectedly");
+                app.connection_status = app::ConnectionStatus::Disconnected;
             }
         }
 
@@ -730,10 +756,66 @@ fn handle_mouse_event(app: &mut App, mouse: crossterm::event::MouseEvent) {
 
 fn handle_matrix_event(app: &mut App, matrix_event: MatrixEvent) {
     match matrix_event {
-        MatrixEvent::RoomListUpdate(rooms) => {
-            let current_room_id = current_room_id(app);
-            app.rooms = rooms;
-            sort_rooms_by_activity(app, current_room_id);
+        MatrixEvent::RoomListUpdate(mut rooms) => {
+            if app.rooms.is_empty() {
+                // First load: sort by activity and use as-is.
+                let messages = &app.messages;
+                rooms.sort_by(|a, b| {
+                    let a_ts = messages
+                        .get(&a.id)
+                        .and_then(|msgs| msgs.last().map(|msg| msg.timestamp))
+                        .or(a.last_activity);
+                    let b_ts = messages
+                        .get(&b.id)
+                        .and_then(|msgs| msgs.last().map(|msg| msg.timestamp))
+                        .or(b.last_activity);
+                    b_ts.cmp(&a_ts).then_with(|| a.id.cmp(&b.id))
+                });
+                app.rooms = rooms;
+            } else {
+                // Subsequent syncs: merge updates while preserving the
+                // current display order so rooms don't jump around.
+                let current_room_id = current_room_id(app);
+                let new_map: std::collections::HashMap<String, Room> =
+                    rooms.drain(..).map(|r| (r.id.clone(), r)).collect();
+
+                // Update existing rooms in-place (preserve order).
+                for room in &mut app.rooms {
+                    if let Some(updated) = new_map.get(&room.id) {
+                        room.name.clone_from(&updated.name);
+                        room.is_direct = updated.is_direct;
+                        room.unread_count = updated.unread_count;
+                        if updated.last_activity.is_some() {
+                            room.last_activity = updated.last_activity;
+                        }
+                    }
+                }
+
+                // Remove rooms that no longer exist on the server.
+                app.rooms.retain(|r| new_map.contains_key(&r.id));
+
+                // Append any newly joined rooms at the end.
+                let existing: std::collections::HashSet<String> =
+                    app.rooms.iter().map(|r| r.id.clone()).collect();
+                let new_rooms: Vec<Room> = new_map
+                    .into_values()
+                    .filter(|r| !existing.contains(&r.id))
+                    .collect();
+                app.rooms.extend(new_rooms);
+
+                // Fix up selected_room if it went out of bounds or the
+                // selected room was removed.
+                if let Some(rid) = current_room_id {
+                    if let Some(pos) = app.rooms.iter().position(|r| r.id == rid) {
+                        app.selected_room = pos;
+                    } else if app.selected_room >= app.rooms.len() {
+                        app.selected_room = app.rooms.len().saturating_sub(1);
+                    }
+                } else if app.selected_room >= app.rooms.len() {
+                    app.selected_room = app.rooms.len().saturating_sub(1);
+                }
+            }
+
             app.connection_status = app::ConnectionStatus::Connected;
             tracing::debug!("Room list updated: {} rooms", app.rooms.len());
         }
@@ -748,8 +830,6 @@ fn handle_matrix_event(app: &mut App, matrix_event: MatrixEvent) {
             }
 
             msgs.push(message);
-            let current_room_id = current_room_id(app);
-            sort_rooms_by_activity(app, current_room_id);
         }
         MatrixEvent::MessageEdited {
             room_id,
@@ -772,28 +852,6 @@ fn handle_matrix_event(app: &mut App, matrix_event: MatrixEvent) {
     }
 }
 
-fn sort_rooms_by_activity(app: &mut App, current_room_id: Option<String>) {
-    let messages = &app.messages;
-    app.rooms.sort_by(|a, b| {
-        let a_ts = messages
-            .get(&a.id)
-            .and_then(|msgs| msgs.last().map(|msg| msg.timestamp))
-            .or(a.last_activity);
-        let b_ts = messages
-            .get(&b.id)
-            .and_then(|msgs| msgs.last().map(|msg| msg.timestamp))
-            .or(b.last_activity);
-        b_ts.cmp(&a_ts)
-    });
-
-    if let Some(room_id) = current_room_id {
-        if let Some(pos) = app.rooms.iter().position(|room| room.id == room_id) {
-            app.selected_room = pos;
-        }
-    } else if app.selected_room >= app.rooms.len() {
-        app.selected_room = app.rooms.len().saturating_sub(1);
-    }
-}
 
 fn current_room_id(app: &App) -> Option<String> {
     app.rooms.get(app.selected_room).map(|room| room.id.clone())
