@@ -2,6 +2,7 @@ use matrix_sdk::ruma::events::room::message::{
     MessageType, OriginalSyncRoomMessageEvent, SyncRoomMessageEvent,
 };
 use matrix_sdk::Client;
+use std::time::Duration;
 use tokio::sync::mpsc;
 
 use crate::app::{Message, Room};
@@ -135,7 +136,9 @@ pub fn start_sync(client: Client) -> mpsc::UnboundedReceiver<MatrixEvent> {
         let _ = tx.send(MatrixEvent::RoomListUpdate(rooms));
 
         // Continuous sync loop.
-        let settings = matrix_sdk::config::SyncSettings::default();
+        // Set server-side long-poll timeout for sync.
+        let settings = matrix_sdk::config::SyncSettings::default()
+            .timeout(Duration::from_secs(30));
         let mut sync_token: Option<String> = None;
 
         loop {
@@ -152,7 +155,18 @@ pub fn start_sync(client: Client) -> mpsc::UnboundedReceiver<MatrixEvent> {
                     // Auto-join any new invites.
                     auto_join_invites(&client).await;
 
-                    let rooms = get_room_list(&client).await;
+                    // Timeout the room list fetch so a hanging HTTP request
+                    // doesn't block the entire sync loop.
+                    let rooms = match tokio::time::timeout(
+                        Duration::from_secs(30),
+                        get_room_list(&client),
+                    ).await {
+                        Ok(rooms) => rooms,
+                        Err(_) => {
+                            tracing::warn!("get_room_list timed out, using empty list");
+                            vec![]
+                        }
+                    };
                     let _ = tx.send(MatrixEvent::RoomListUpdate(rooms));
                 }
                 Err(e) => {
