@@ -13,20 +13,20 @@ use crate::app::App;
 pub fn draw(frame: &mut Frame, app: &App) {
     let vertical = if app.show_help_bar {
         Layout::vertical([
-            Constraint::Length(1),
             Constraint::Fill(1),
+            Constraint::Length(1),
             Constraint::Length(1),
         ])
     } else {
-        Layout::vertical([Constraint::Length(1), Constraint::Fill(1)])
+        Layout::vertical([Constraint::Fill(1), Constraint::Length(1)])
     };
 
-    let (status_area, body_area, help_area) = if app.show_help_bar {
-        let [status_area, body_area, help_area] = vertical.areas(frame.area());
-        (status_area, body_area, Some(help_area))
+    let (body_area, help_area, status_area) = if app.show_help_bar {
+        let [body_area, help_area, status_area] = vertical.areas(frame.area());
+        (body_area, Some(help_area), status_area)
     } else {
-        let [status_area, body_area] = vertical.areas(frame.area());
-        (status_area, body_area, None)
+        let [body_area, status_area] = vertical.areas(frame.area());
+        (body_area, None, status_area)
     };
 
     let [room_area, chat_area] = Layout::horizontal([
@@ -50,11 +50,11 @@ pub fn draw(frame: &mut Frame, app: &App) {
     ])
     .areas(chat_area);
 
-    status_bar::draw(frame, app, status_area);
     room_list::draw(frame, app, room_area);
     message_view::draw(frame, app, message_area);
     compose_bar::draw(frame, app, compose_area);
     if let Some(help_area) = help_area {
         help_bar::draw(frame, app, help_area);
     }
+    status_bar::draw(frame, app, status_area);
 }
